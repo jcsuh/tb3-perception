@@ -1,4 +1,6 @@
-"""Gazebo에 tb3p 설계도로 로봇을 띄운다.
+
+"""
+Gazebo에 tb3p 설계도로 로봇을 띄운다.
 
 1) Gazebo 실행 (turtlebot3_world 월드)
 2) tb3p_description으로 TF 발행 (use_sim_time=true)
@@ -9,7 +11,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import AppendEnvironmentVariable, DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (AppendEnvironmentVariable, DeclareLaunchArgument,
+                            IncludeLaunchDescription)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -55,10 +58,10 @@ def generate_launch_description():
             package='ros_gz_sim',
             executable='create',
             output='screen',
-            arguments=['-name', 'tb3p', 
+            arguments=['-name', 'tb3p',
                        '-topic', 'robot_description',
-                       '-x', x_pose, 
-                       '-y', y_pose, 
+                       '-x', x_pose,
+                       '-y', y_pose,
                        '-z', '0.01'],
         ),
 

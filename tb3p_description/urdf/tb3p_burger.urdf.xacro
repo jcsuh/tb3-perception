@@ -202,7 +202,7 @@
       <odom_topic>odom</odom_topic>
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
-      <odom_publisher_frequency>30</odom_publisher_frequency>
+      <!-- odom 주기: 실측 50 Hz (DiffDrive 기본값). odom_publisher_frequency를 30, 10으로 바꿔도 50 Hz 유지되어 설정이 적용되지 않음을 확인 (2026-10-04) -->
       <tf_topic>/tf</tf_topic>
     </plugin>
 
