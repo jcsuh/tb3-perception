@@ -7,6 +7,21 @@
 -->
 <robot name="tb3p_burger" xmlns:xacro="http://ros.org/wiki/xacro">
 
+  <!-- ===== 캘리브레이션 파일 읽기 ===== -->
+  <xacro:arg name="calib_file" default="$(find tb3p_description)/config/calibration.yaml"/>
+  <xacro:property name="calib" value="${xacro.load_yaml('$(arg calib_file)')}"/>
+
+  <!-- 센서 조인트: 위치와 방향을 calibration.yaml에서 읽는다 -->
+  <xacro:macro name="calibrated_joint" params="joint key">
+    <xacro:property name="s" value="${calib['sensors'][key]}"/>
+    <joint name="${joint}" type="fixed">
+      <parent link="${s['parent']}"/>
+      <child link="${s['child']}"/>
+      <origin xyz="${s['xyz'][0]} ${s['xyz'][1]} ${s['xyz'][2]}"
+              rpy="${s['rpy'][0]} ${s['rpy'][1]} ${s['rpy'][2]}"/>
+    </joint>
+  </xacro:macro>
+
   <!-- ===== 색 ===== -->
   <material name="light_black"><color rgba="0.4 0.4 0.4 1.0"/></material>
   <material name="dark"><color rgba="0.3 0.3 0.3 1.0"/></material>
@@ -105,11 +120,7 @@
   </gazebo>
 
   <!-- ===== IMU (OpenCR) ===== -->
-  <joint name="imu_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="imu_link"/>
-    <origin xyz="-0.032 0 0.068" rpy="0 0 0"/>
-  </joint>
+  <xacro:calibrated_joint joint="imu_joint" key="imu"/>
 
   <link name="imu_link"/>
 
@@ -135,11 +146,7 @@
   </gazebo>
 
   <!-- ===== 2D LiDAR (현재 LDS-01 사양 그대로, 세션 4에서 LDS-02로 교체) ===== -->
-  <joint name="scan_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="base_scan"/>
-    <origin xyz="-0.032 0 0.172" rpy="0 0 0"/>
-  </joint>
+  <xacro:calibrated_joint joint="scan_joint" key="lidar"/>
 
   <link name="base_scan">
     <visual>

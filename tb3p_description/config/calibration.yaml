@@ -1,0 +1,23 @@
+# tb3p 센서 캘리브레이션
+#
+# - 단위: 위치 m, 회전 rad (roll, pitch, yaw), 시간 s
+# - xyz/rpy는 parent 링크 기준 child 링크의 위치와 방향 (URDF 조인트 origin과 같은 뜻)
+# - time_offset: 센서 시각에 더해야 할 보정값 (W8-9 시간 오프셋 추정 결과가 들어감)
+# - source: nominal(설계도 공칭값) | estimated(프로젝트 A 추정값)
+
+source: nominal
+
+sensors:
+  imu:
+    parent: base_link
+    child: imu_link
+    xyz: [-0.032, 0.0, 0.068]
+    rpy: [0.0, 0.0, 0.0]
+    time_offset: 0.0
+
+  lidar:
+    parent: base_link
+    child: base_scan
+    xyz: [-0.032, 0.0, 0.172]
+    rpy: [0.0, 0.0, 0.0]
+    time_offset: 0.0
