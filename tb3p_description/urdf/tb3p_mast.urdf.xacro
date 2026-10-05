@@ -1,0 +1,104 @@
+<?xml version="1.0"?>
+<!--
+  추가 층(마스트): 기존 Burger 맨 위판 위에 Jetson을 얹고,
+  같은 간격으로 새 판을 올려 LiDAR를 그 위로 옮긴다.
+
+  치수 출처
+  - Burger 판 높이, 두께, 층 간격, 외곽, 지지대 위치:
+    turtlebot3_description/meshes/bases/burger_base.stl 분석 (2026-10-04)
+  - Jetson Orin Nano Super Dev Kit: 103 x 90.5 x 34.77 mm (NVIDIA 데이터시트), 0.176 kg (판매처)
+  - 추정값 (구매 후 실측): 판 무게 20 g
+
+  주의: 판 사이 빈 공간 = mast_pitch - plate_thk = 38.1 mm, Jetson 높이 34.8 mm
+        → 위쪽 여유 약 3 mm. 냉각을 위해 더 긴 지지대가 필요할 수 있음 (구매 전 결정)
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ===== Burger 판 (CAD 측정, base_link 기준, m) ===== -->
+  <xacro:property name="plate_top_z" value="0.1418"/>
+  <xacro:property name="plate_thk" value="0.0093"/>
+  <xacro:property name="mast_pitch" value="0.0474"/>
+  <xacro:property name="plate_cx" value="-0.032"/>
+  <xacro:property name="plate_mass" value="0.020"/>
+
+  <!-- ===== Jetson ===== -->
+  <xacro:property name="jetson_dx" value="0.0905"/>
+  <xacro:property name="jetson_dy" value="0.103"/>
+  <xacro:property name="jetson_dz" value="0.03477"/>
+  <xacro:property name="jetson_mass" value="0.176"/>
+
+  <material name="jetson_green"><color rgba="0.46 0.73 0.0 1.0"/></material>
+  <material name="plate_grey"><color rgba="0.55 0.55 0.55 1.0"/></material>
+
+  <!-- 직육면체 관성: I = m/12 * (나머지 두 변의 제곱 합) -->
+  <xacro:macro name="box_inertial" params="m x y z">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${m}"/>
+      <inertia ixx="${m/12*(y*y+z*z)}" ixy="0" ixz="0"
+               iyy="${m/12*(x*x+z*z)}" iyz="0"
+               izz="${m/12*(x*x+y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- 팔각형 판 = 직육면체 3개를 겹친 근사 (CAD 외곽 기준) -->
+  <xacro:macro name="octa_plate_shape" params="tag">
+    <xacro:if value="${tag == 'visual'}">
+      <visual><geometry><box size="0.130 0.088 ${plate_thk}"/></geometry><material name="plate_grey"/></visual>
+      <visual><geometry><box size="0.088 0.120 ${plate_thk}"/></geometry><material name="plate_grey"/></visual>
+      <visual><geometry><box size="0.056 0.1376 ${plate_thk}"/></geometry><material name="plate_grey"/></visual>
+    </xacro:if>
+    <xacro:if value="${tag == 'collision'}">
+      <collision><geometry><box size="0.130 0.088 ${plate_thk}"/></geometry></collision>
+      <collision><geometry><box size="0.088 0.120 ${plate_thk}"/></geometry></collision>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- 지지대 한 개 (모양만): 새 판 중심 기준 (x, y), 아래 판 윗면까지 -->
+  <xacro:macro name="standoff_visual" params="x y">
+    <visual>
+      <origin xyz="${x} ${y} ${-mast_pitch/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.0025" length="${mast_pitch - plate_thk}"/></geometry>
+      <material name="plate_grey"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- ===== Jetson: 기존 맨 위판 위, 판 중심, 긴 변이 좌우 ===== -->
+  <joint name="jetson_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="jetson_link"/>
+    <origin xyz="${plate_cx} 0 ${plate_top_z + jetson_dz/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="jetson_link">
+    <visual>
+      <geometry><box size="${jetson_dx} ${jetson_dy} ${jetson_dz}"/></geometry>
+      <material name="jetson_green"/>
+    </visual>
+    <collision>
+      <geometry><box size="${jetson_dx} ${jetson_dy} ${jetson_dz}"/></geometry>
+    </collision>
+    <xacro:box_inertial m="${jetson_mass}" x="${jetson_dx}" y="${jetson_dy}" z="${jetson_dz}"/>
+  </link>
+
+  <!-- ===== 새 판: 아래 층과 같은 간격, 같은 지지대 위치 ===== -->
+  <joint name="mast_plate_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="mast_plate_link"/>
+    <origin xyz="${plate_cx} 0 ${plate_top_z + mast_pitch - plate_thk/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="mast_plate_link">
+    <xacro:octa_plate_shape tag="visual"/>
+    <!-- 지지대 6개: base_link 기준 (-96, ±24), (-8, ±64), (+32, ±24) mm -->
+    <xacro:standoff_visual x="-0.064" y="0.024"/>
+    <xacro:standoff_visual x="-0.064" y="-0.024"/>
+    <xacro:standoff_visual x="0.024"  y="0.064"/>
+    <xacro:standoff_visual x="0.024"  y="-0.064"/>
+    <xacro:standoff_visual x="0.064"  y="0.024"/>
+    <xacro:standoff_visual x="0.064"  y="-0.024"/>
+    <xacro:octa_plate_shape tag="collision"/>
+    <xacro:box_inertial m="${plate_mass}" x="0.130" y="0.120" z="${plate_thk}"/>
+  </link>
+
+</robot>

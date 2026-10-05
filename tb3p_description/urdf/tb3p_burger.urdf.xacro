@@ -197,6 +197,9 @@
     </sensor>
   </gazebo>
 
+  <!-- ===== 추가 층: Jetson과 새 판 ===== -->
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_mast.urdf.xacro"/>
+
   <!-- ===== Gazebo 플러그인: 바퀴 구동과 바퀴 각도 보고 ===== -->
   <gazebo>
     <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
