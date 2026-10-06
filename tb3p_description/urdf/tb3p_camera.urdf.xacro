@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<!--
+  D435i 카메라와 브래킷
+
+  - 카메라 몸체와 내부 좌표계: 인텔 realsense2_description의 sensor_d435i 매크로
+    (좌표계 이름이 실제 realsense 드라이버와 같음)
+  - (가) 로봇에 붙은 위치: calibration.yaml의 sensors.camera
+        base_link -> camera_bottom_screw_frame (바닥 삼각대 나사 = 브래킷 고정점)
+  - (나) 상자 안 렌즈 배치: sim:=true일 때만 설계도가 만든다 (use_nominal_extrinsics)
+        실제 로봇에서는 realsense 드라이버가 공장 캘리브레이션 값으로 발행
+  - 브래킷: 기존 맨 위판 위 3 mm 판, 앞 지지대 사이로 판 끝 밖까지 (모양만, 추정 치수)
+  - 이 파일은 tb3p_mast.urdf.xacro 다음에 include해야 함 (plate_top_z, plate_grey 사용)
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+
+  <xacro:property name="cam" value="${calib['sensors']['camera']}"/>
+  <xacro:property name="bracket_thk" value="0.003"/>
+
+  <!-- ===== D435i: 위치는 YAML, 내부 좌표계는 sim 스위치 ===== -->
+  <xacro:sensor_d435i parent="${cam['parent']}" name="camera"
+                      use_nominal_extrinsics="$(arg sim)">
+    <origin xyz="${cam['xyz'][0]} ${cam['xyz'][1]} ${cam['xyz'][2]}"
+            rpy="${cam['rpy'][0]} ${cam['rpy'][1]} ${cam['rpy'][2]}"/>
+  </xacro:sensor_d435i>
+
+  <!-- ===== 브래킷 (모양만): x 0.020 ~ 0.064, 폭 36 mm (앞 지지대 y=±24 사이) ===== -->
+  <joint name="camera_bracket_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_bracket_link"/>
+    <origin xyz="0.042 0 ${plate_top_z + bracket_thk/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_bracket_link">
+    <visual>
+      <geometry><box size="0.044 0.036 ${bracket_thk}"/></geometry>
+      <material name="plate_grey"/>
+    </visual>
+  </link>
+
+</robot>

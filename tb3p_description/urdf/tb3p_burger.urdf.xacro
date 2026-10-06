@@ -9,6 +9,7 @@
 
   <!-- ===== 캘리브레이션 파일 읽기 ===== -->
   <xacro:arg name="calib_file" default="$(find tb3p_description)/config/calibration.yaml"/>
+  <xacro:arg name="sim" default="false"/>
   <xacro:property name="calib" value="${xacro.load_yaml('$(arg calib_file)')}"/>
 
   <!-- 센서 조인트: 위치와 방향을 calibration.yaml에서 읽는다 -->
@@ -199,6 +200,7 @@
 
   <!-- ===== 추가 층: Jetson과 새 판 ===== -->
   <xacro:include filename="$(find tb3p_description)/urdf/tb3p_mast.urdf.xacro"/>
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_camera.urdf.xacro"/>
 
   <!-- ===== Gazebo 플러그인: 바퀴 구동과 바퀴 각도 보고 ===== -->
   <gazebo>

@@ -21,3 +21,10 @@ sensors:
     xyz: [-0.032, 0.0, 0.219]  # 새 판 윗면 0.1892 + 판 위 LiDAR 높이 0.0302 (burger_base.stl 기준)
     rpy: [0.0, 0.0, 0.0]
     time_offset: 0.0
+
+  camera:
+    parent: base_link
+    child: camera_bottom_screw_frame   # D435i 바닥 삼각대 나사 구멍 = 브래킷 고정점
+    xyz: [0.0502, 0.0, 0.1448]         # 뒷면이 판 끝보다 3 mm 앞, 브래킷 두께 3 mm (추정)
+    rpy: [0.0, 0.0, 0.0]
+    time_offset: 0.0

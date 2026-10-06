@@ -1,9 +1,8 @@
-
 """
 Gazebo에 tb3p 설계도로 로봇을 띄운다.
 
 1) Gazebo 실행 (turtlebot3_world 월드)
-2) tb3p_description으로 TF 발행 (use_sim_time=true)
+2) tb3p_description으로 TF 발행 (use_sim_time=true, sim=true)
 3) robot_description 토픽으로 Gazebo에 로봇 스폰
 4) Gazebo <-> ROS 토픽 브리지
 """
@@ -21,6 +20,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     tb3_gazebo = get_package_share_directory('turtlebot3_gazebo')
     tb3_description = get_package_share_directory('turtlebot3_description')
+    rs_description = get_package_share_directory('realsense2_description')
     tb3p_description = get_package_share_directory('tb3p_description')
     tb3p_gazebo = get_package_share_directory('tb3p_gazebo')
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
@@ -35,9 +35,10 @@ def generate_launch_description():
         DeclareLaunchArgument('x_pose', default_value='-2.0'),
         DeclareLaunchArgument('y_pose', default_value='-0.5'),
 
-        # Gazebo가 월드 모델(model://)과 로봇 메시(package://)를 찾을 위치
+        # Gazebo가 월드 모델(model://)과 로봇·카메라 메시(package://)를 찾을 위치
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3_gazebo, 'models')),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(tb3_description)),
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(rs_description)),
 
         # 1) Gazebo
         IncludeLaunchDescription(
@@ -46,11 +47,11 @@ def generate_launch_description():
                               'on_exit_shutdown': 'true'}.items(),
         ),
 
-        # 2) 설계도 → TF
+        # 2) 설계도 → TF (시뮬레이션이므로 D435i 내부 좌표계도 설계도가 발행)
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(tb3p_description, 'launch', 'description.launch.py')),
-            launch_arguments={'use_sim_time': 'true'}.items(),
+            launch_arguments={'use_sim_time': 'true', 'sim': 'true'}.items(),
         ),
 
         # 3) 같은 설계도로 Gazebo에 로봇 생성
