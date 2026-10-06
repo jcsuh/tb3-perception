@@ -39,4 +39,6 @@
     </visual>
   </link>
 
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_camera_sim.urdf.xacro"/>
+
 </robot>

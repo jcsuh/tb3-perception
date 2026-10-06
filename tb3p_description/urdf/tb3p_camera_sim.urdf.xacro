@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<!--
+  D435i의 Gazebo 센서 (sim:=true일 때만)
+
+  - 토픽 이름은 실제 realsense-ros(Jazzy) 기본값과 같게: /camera/camera/...
+  - 카메라는 일반 좌표계(x 앞)에 붙이고, 메시지 frame_id는 optical 좌표계(z 앞)로
+  - IMU는 합친 형태(unite_imu_method)로 /camera/camera/imu, frame camera_imu_optical_frame
+  - 해상도 848x480 @ 30 Hz, 시야각: RGB 69°, 깊이·IR 87° (D435i 데이터시트)
+  - IR 카메라 두 개는 enable_infra:=true일 때만 (렌더링 부하 때문에 기본 끔)
+  - 점구름은 Gazebo가 아니라 depth_image_proc로 만든다 (Gazebo 점구름은 일반 좌표계 방향)
+  - 노이즈, 측정 거리: 세션 4에서 데이터시트 값으로 조정
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="enable_infra" default="false"/>
+
+  <xacro:if value="$(arg sim)">
+
+    <!-- 카메라 센서 하나 -->
+    <xacro:macro name="gz_camera"
+                 params="link frame name type image_topic info_topic hfov format near far">
+      <gazebo reference="${link}">
+        <sensor name="${name}" type="${type}">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <visualize>false</visualize>
+          <topic>${image_topic}</topic>
+          <gz_frame_id>${frame}</gz_frame_id>
+          <camera>
+            <camera_info_topic>${info_topic}</camera_info_topic>
+            <horizontal_fov>${hfov}</horizontal_fov>
+            <image>
+              <width>848</width>
+              <height>480</height>
+              <format>${format}</format>
+            </image>
+            <clip>
+              <near>${near}</near>
+              <far>${far}</far>
+            </clip>
+          </camera>
+        </sensor>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:property name="ns" value="camera/camera"/>
+    <xacro:property name="fov_color" value="${69.0 * pi / 180}"/>
+    <xacro:property name="fov_depth" value="${87.0 * pi / 180}"/>
+
+    <!-- RGB -->
+    <xacro:gz_camera link="camera_color_frame" frame="camera_color_optical_frame"
+                     name="d435i_color" type="camera"
+                     image_topic="${ns}/color/image_raw" info_topic="${ns}/color/camera_info"
+                     hfov="${fov_color}" format="R8G8B8" near="0.05" far="20.0"/>
+
+    <!-- 깊이 (Gazebo는 32비트 실수, 미터 단위로 내보냄) -->
+    <xacro:gz_camera link="camera_depth_frame" frame="camera_depth_optical_frame"
+                     name="d435i_depth" type="depth_camera"
+                     image_topic="${ns}/depth/image_rect_raw" info_topic="${ns}/depth/camera_info"
+                     hfov="${fov_depth}" format="R_FLOAT32" near="0.2" far="10.0"/>
+
+    <!-- IR 왼쪽, 오른쪽 (흑백): 필요할 때만 -->
+    <xacro:if value="$(arg enable_infra)">
+      <xacro:gz_camera link="camera_infra1_frame" frame="camera_infra1_optical_frame"
+                       name="d435i_infra1" type="camera"
+                       image_topic="${ns}/infra1/image_rect_raw"
+                       info_topic="${ns}/infra1/camera_info"
+                       hfov="${fov_depth}" format="L8" near="0.05" far="20.0"/>
+      <xacro:gz_camera link="camera_infra2_frame" frame="camera_infra2_optical_frame"
+                       name="d435i_infra2" type="camera"
+                       image_topic="${ns}/infra2/image_rect_raw"
+                       info_topic="${ns}/infra2/camera_info"
+                       hfov="${fov_depth}" format="L8" near="0.05" far="20.0"/>
+    </xacro:if>
+
+    <!-- 합친 IMU 좌표계 (시뮬레이션 전용, 자이로 위치·방향과 같음) -->
+    <joint name="camera_imu_optical_joint" type="fixed">
+      <parent link="camera_gyro_optical_frame"/>
+      <child link="camera_imu_optical_frame"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+    <link name="camera_imu_optical_frame"/>
+
+    <gazebo reference="camera_imu_optical_frame">
+      <sensor name="d435i_imu" type="imu">
+        <always_on>true</always_on>
+        <update_rate>200</update_rate>
+        <topic>${ns}/imu</topic>
+        <gz_frame_id>camera_imu_optical_frame</gz_frame_id>
+      </sensor>
+    </gazebo>
+
+  </xacro:if>
+</robot>

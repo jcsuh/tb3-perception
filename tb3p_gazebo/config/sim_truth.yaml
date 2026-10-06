@@ -1,0 +1,36 @@
+# 시뮬레이션 정답 캘리브레이션 (Gazebo 로봇과 평가 도구 전용)
+#
+# 공칭값(tb3p_description/config/calibration.yaml)에서 일부러 조금씩 틀어 놓은 값.
+# - Gazebo 속 로봇은 이 값대로 조립된다 (= 실제 로봇의 "진짜 조립 상태" 역할)
+# - robot_state_publisher와 모든 추정기는 공칭값만 본다. 이 파일을 읽으면 안 된다.
+# - 이 파일을 읽어도 되는 것은 평가 도구(tb3p_eval)뿐: 추정 결과를 채점하는 정답지
+# - 실행 중에는 /truth/tf_static 으로도 발행된다
+#
+# 공칭값 대비 차이 (위치 mm, 회전 deg roll/pitch/yaw)
+#   imu:    (+4, +3, +2)   (+0.5, -0.7, +1.0)
+#   lidar:  (-3, +4, +4)   (+0.3, -0.2, +2.0)
+#   camera: (+3, -6, +2)   (-1.0, +2.0, -1.5)
+
+source: sim_truth
+
+sensors:
+  imu:
+    parent: base_link
+    child: imu_link
+    xyz: [-0.028, 0.003, 0.070]
+    rpy: [0.00873, -0.01222, 0.01745]
+    time_offset: 0.0
+
+  lidar:
+    parent: base_link
+    child: base_scan
+    xyz: [-0.035, 0.004, 0.223]
+    rpy: [0.00524, -0.00349, 0.03491]
+    time_offset: 0.0
+
+  camera:
+    parent: base_link
+    child: camera_bottom_screw_frame
+    xyz: [0.0532, -0.006, 0.1468]
+    rpy: [-0.01745, 0.03491, -0.02618]
+    time_offset: 0.0
