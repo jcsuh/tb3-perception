@@ -34,7 +34,7 @@ def generate_launch_description():
     truth_calib = os.path.join(tb3p_gazebo, 'config', 'sim_truth.yaml')
 
     truth_description = ParameterValue(
-        Command(['xacro ', xacro_file, ' calib_file:=', truth_calib, ' sim:=true']),
+        Command(['xacro ', xacro_file, ' calib_file:=', truth_calib, ' sim:=true truth:=true']),
         value_type=str)
 
     x_pose = LaunchConfiguration('x_pose')

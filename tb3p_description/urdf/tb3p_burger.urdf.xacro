@@ -1,18 +1,22 @@
 <?xml version="1.0"?>
 <!--
   tb3p Burger 설계도 (단일 원본)
-  - 위치(조인트 origin): turtlebot3_description의 URDF 값 = 공칭값
+  - 센서 위치: calib_file(YAML)의 sensors, 나머지 위치: turtlebot3_description URDF 값
   - 물리 값(질량, 관성, 마찰): turtlebot3_gazebo의 model.sdf 값 (Gazebo에서 검증된 값)
   - Gazebo 센서는 링크 기준점에 놓음(센서 pose 없음) → Gazebo 위치 = TF 위치
+  - 센서 사양: LiDAR LDS-03, 몸체 IMU ICM-20648 (데이터시트, 2026-10-10 확인)
+  - IMU 노이즈: calib_file의 imu_noise (노이즈 밀도) → σ = 밀도 × √rate
+  - 스위치: calib_file, sim, truth (+ tb3p_camera_sim.urdf.xacro의 enable_infra)
 -->
 <robot name="tb3p_burger" xmlns:xacro="http://ros.org/wiki/xacro">
 
-  <!-- ===== 캘리브레이션 파일 읽기 ===== -->
+  <!-- ===== 스위치와 캘리브레이션 파일 ===== -->
   <xacro:arg name="calib_file" default="$(find tb3p_description)/config/calibration.yaml"/>
   <xacro:arg name="sim" default="false"/>
+  <xacro:arg name="truth" default="false"/>
   <xacro:property name="calib" value="${xacro.load_yaml('$(arg calib_file)')}"/>
 
-  <!-- 센서 조인트: 위치와 방향을 calibration.yaml에서 읽는다 -->
+  <!-- 센서 조인트: 위치와 방향을 YAML의 sensors에서 읽는다 -->
   <xacro:macro name="calibrated_joint" params="joint key">
     <xacro:property name="s" value="${calib['sensors'][key]}"/>
     <joint name="${joint}" type="fixed">
@@ -21,6 +25,26 @@
       <origin xyz="${s['xyz'][0]} ${s['xyz'][1]} ${s['xyz'][2]}"
               rpy="${s['rpy'][0]} ${s['rpy'][1]} ${s['rpy'][2]}"/>
     </joint>
+  </xacro:macro>
+
+  <!-- Gazebo IMU 주기와 노이즈: YAML의 imu_noise에서 읽어 샘플당 σ로 환산 -->
+  <xacro:macro name="gz_imu_noise" params="key">
+    <xacro:property name="n" value="${calib['imu_noise'][key]}"/>
+    <xacro:property name="sg" value="${n['gyro_noise_density'] * n['rate'] ** 0.5}"/>
+    <xacro:property name="sa" value="${n['accel_noise_density'] * n['rate'] ** 0.5}"/>
+    <update_rate>${n['rate']}</update_rate>
+    <imu>
+      <angular_velocity>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></z>
+      </angular_velocity>
+      <linear_acceleration>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></z>
+      </linear_acceleration>
+    </imu>
   </xacro:macro>
 
   <!-- ===== 색 ===== -->
@@ -97,6 +121,7 @@
   <xacro:wheel side="right" y="-0.08" mesh="right_tire.stl"/>
 
   <!-- ===== 뒤쪽 캐스터 (URDF는 볼 조인트가 없어 고정 + 마찰 0으로 미끄러지게) ===== -->
+  <!-- 바퀴 바닥보다 1 mm 높음 → Gazebo 로봇이 약 0.7° 앞들림 (W7 IMU 정렬 시험 재료로 유지) -->
   <joint name="caster_back_joint" type="fixed">
     <parent link="base_link"/>
     <child link="caster_back_link"/>
@@ -120,33 +145,21 @@
     <mu2>0.0</mu2>
   </gazebo>
 
-  <!-- ===== IMU (OpenCR) ===== -->
+  <!-- ===== 몸체 IMU (OpenCR ICM-20648) ===== -->
   <xacro:calibrated_joint joint="imu_joint" key="imu"/>
-
   <link name="imu_link"/>
 
   <gazebo reference="imu_link">
     <sensor name="tb3_imu" type="imu">
       <always_on>true</always_on>
-      <update_rate>200</update_rate>
       <topic>imu</topic>
       <gz_frame_id>imu_link</gz_frame_id>
-      <imu>
-        <angular_velocity>
-          <x><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></x>
-          <y><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></y>
-          <z><noise type="gaussian"><mean>0.0</mean><stddev>2e-4</stddev></noise></z>
-        </angular_velocity>
-        <linear_acceleration>
-          <x><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></x>
-          <y><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></y>
-          <z><noise type="gaussian"><mean>0.0</mean><stddev>1.7e-2</stddev></noise></z>
-        </linear_acceleration>
-      </imu>
+      <xacro:gz_imu_noise key="base_imu"/>
     </sensor>
   </gazebo>
 
-  <!-- ===== 2D LiDAR (현재 LDS-01 사양 그대로, 세션 4에서 LDS-02로 교체) ===== -->
+  <!-- ===== 2D LiDAR (LDS-03: 0.05–12 m, 10 Hz, 0.9° = 400점, 정확도 ±10/±20 mm) ===== -->
+  <!-- 모양과 판 위 높이는 아직 LDS-01 기준 (LDS-03 치수 확인 후 교체) -->
   <xacro:calibrated_joint joint="scan_joint" key="lidar"/>
 
   <link name="base_scan">
@@ -169,26 +182,28 @@
   </link>
 
   <gazebo reference="base_scan">
-    <sensor name="hls_lfcd_lds" type="gpu_lidar">
+    <sensor name="lds_03" type="gpu_lidar">
       <always_on>true</always_on>
       <visualize>true</visualize>
-      <update_rate>5</update_rate>
+      <update_rate>10</update_rate>
       <topic>scan</topic>
       <gz_frame_id>base_scan</gz_frame_id>
       <lidar>
         <scan>
           <horizontal>
-            <samples>360</samples>
+            <!-- 400점, 0.9° 간격: 마지막 점이 첫 점과 겹치지 않게 2π × 399/400 까지 -->
+            <samples>400</samples>
             <resolution>1.0</resolution>
             <min_angle>0.0</min_angle>
-            <max_angle>6.28</max_angle>
+            <max_angle>${2 * pi * 399 / 400}</max_angle>
           </horizontal>
         </scan>
         <range>
-          <min>0.12</min>
-          <max>3.5</max>
-          <resolution>0.015</resolution>
+          <min>0.05</min>
+          <max>12.0</max>
+          <resolution>0.001</resolution>
         </range>
+        <!-- 정확도 ±20 mm(1 m 이상)를 약 2σ로 보고 σ = 10 mm (Gazebo는 거리와 무관한 상수 σ만 지원) -->
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
@@ -200,6 +215,8 @@
 
   <!-- ===== 추가 층: Jetson과 새 판 ===== -->
   <xacro:include filename="$(find tb3p_description)/urdf/tb3p_mast.urdf.xacro"/>
+
+  <!-- ===== D435i 카메라 ===== -->
   <xacro:include filename="$(find tb3p_description)/urdf/tb3p_camera.urdf.xacro"/>
 
   <!-- ===== Gazebo 플러그인: 바퀴 구동과 바퀴 각도 보고 ===== -->

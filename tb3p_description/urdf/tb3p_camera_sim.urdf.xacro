@@ -5,19 +5,21 @@
   - 토픽 이름은 실제 realsense-ros(Jazzy) 기본값과 같게: /camera/camera/...
   - 카메라는 일반 좌표계(x 앞)에 붙이고, 메시지 frame_id는 optical 좌표계(z 앞)로
   - IMU는 합친 형태(unite_imu_method)로 /camera/camera/imu, frame camera_imu_optical_frame
+    노이즈는 YAML imu_noise.camera_imu (BMI055 데이터시트)
   - 해상도 848x480 @ 30 Hz, 시야각: RGB 69°, 깊이·IR 87° (D435i 데이터시트)
+  - 깊이 노이즈: 실제는 거리 제곱에 비례 (2 m에서 2% 이내), Gazebo는 상수 σ만 지원 → σ 10 mm
   - IR 카메라 두 개는 enable_infra:=true일 때만 (렌더링 부하 때문에 기본 끔)
   - 점구름은 Gazebo가 아니라 depth_image_proc로 만든다 (Gazebo 점구름은 일반 좌표계 방향)
-  - 노이즈, 측정 거리: 세션 4에서 데이터시트 값으로 조정
 -->
 <robot xmlns:xacro="http://ros.org/wiki/xacro">
   <xacro:arg name="enable_infra" default="false"/>
 
   <xacro:if value="$(arg sim)">
 
-    <!-- 카메라 센서 하나 -->
+    <!-- 카메라 센서 하나 (noise_stddev 0이면 노이즈 없음) -->
     <xacro:macro name="gz_camera"
-                 params="link frame name type image_topic info_topic hfov format near far">
+                 params="link frame name type image_topic info_topic hfov format near far
+                         noise_stddev:=0.0">
       <gazebo reference="${link}">
         <sensor name="${name}" type="${type}">
           <always_on>true</always_on>
@@ -37,6 +39,13 @@
               <near>${near}</near>
               <far>${far}</far>
             </clip>
+            <xacro:if value="${noise_stddev > 0}">
+              <noise>
+                <type>gaussian</type>
+                <mean>0.0</mean>
+                <stddev>${noise_stddev}</stddev>
+              </noise>
+            </xacro:if>
           </camera>
         </sensor>
       </gazebo>
@@ -56,7 +65,8 @@
     <xacro:gz_camera link="camera_depth_frame" frame="camera_depth_optical_frame"
                      name="d435i_depth" type="depth_camera"
                      image_topic="${ns}/depth/image_rect_raw" info_topic="${ns}/depth/camera_info"
-                     hfov="${fov_depth}" format="R_FLOAT32" near="0.2" far="10.0"/>
+                     hfov="${fov_depth}" format="R_FLOAT32" near="0.2" far="10.0"
+                     noise_stddev="0.01"/>
 
     <!-- IR 왼쪽, 오른쪽 (흑백): 필요할 때만 -->
     <xacro:if value="$(arg enable_infra)">
@@ -83,9 +93,9 @@
     <gazebo reference="camera_imu_optical_frame">
       <sensor name="d435i_imu" type="imu">
         <always_on>true</always_on>
-        <update_rate>200</update_rate>
         <topic>${ns}/imu</topic>
         <gz_frame_id>camera_imu_optical_frame</gz_frame_id>
+        <xacro:gz_imu_noise key="camera_imu"/>
       </sensor>
     </gazebo>
 

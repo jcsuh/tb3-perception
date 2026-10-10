@@ -8,6 +8,9 @@
         base_link -> camera_bottom_screw_frame (바닥 삼각대 나사 = 브래킷 고정점)
   - (나) 상자 안 렌즈 배치: sim:=true일 때만 설계도가 만든다 (use_nominal_extrinsics)
         실제 로봇에서는 realsense 드라이버가 공장 캘리브레이션 값으로 발행
+  - truth:=true (Gazebo 정답 모델 전용): 나사를 지나는 수직축 둘레로 도는 마운트 관절.
+        /sim/camera_mount_yaw_cmd (rad)로 실행 중에 각도를 바꿔 드리프트를 흉내 낸다.
+        공칭 모델(/tf)에는 이 관절이 없으므로 로봇은 카메라가 돌아간 것을 모른다.
   - 브래킷: 기존 맨 위판 위 3 mm 판, 앞 지지대 사이로 판 끝 밖까지 (모양만, 추정 치수)
   - 이 파일은 tb3p_mast.urdf.xacro 다음에 include해야 함 (plate_top_z, plate_grey 사용)
 -->
@@ -16,14 +19,66 @@
   <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
 
   <xacro:property name="cam" value="${calib['sensors']['camera']}"/>
+  <xacro:property name="cam_xyz" value="${cam['xyz'][0]} ${cam['xyz'][1]} ${cam['xyz'][2]}"/>
+  <xacro:property name="cam_rpy" value="${cam['rpy'][0]} ${cam['rpy'][1]} ${cam['rpy'][2]}"/>
   <xacro:property name="bracket_thk" value="0.003"/>
 
-  <!-- ===== D435i: 위치는 YAML, 내부 좌표계는 sim 스위치 ===== -->
-  <xacro:sensor_d435i parent="${cam['parent']}" name="camera"
-                      use_nominal_extrinsics="$(arg sim)">
-    <origin xyz="${cam['xyz'][0]} ${cam['xyz'][1]} ${cam['xyz'][2]}"
-            rpy="${cam['rpy'][0]} ${cam['rpy'][1]} ${cam['rpy'][2]}"/>
-  </xacro:sensor_d435i>
+  <!-- ===== 공칭·실제 로봇: 카메라는 고정 ===== -->
+  <xacro:unless value="$(arg truth)">
+    <xacro:sensor_d435i parent="${cam['parent']}" name="camera"
+                        use_nominal_extrinsics="$(arg sim)">
+      <origin xyz="${cam_xyz}" rpy="${cam_rpy}"/>
+    </xacro:sensor_d435i>
+  </xacro:unless>
+
+  <!-- ===== 정답 모델(Gazebo): 나사 축 둘레로 도는 마운트 관절 ===== -->
+  <xacro:if value="$(arg truth)">
+    <joint name="camera_mount_yaw_joint" type="revolute">
+      <parent link="${cam['parent']}"/>
+      <child link="camera_mount_link"/>
+      <origin xyz="${cam_xyz}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-0.2" upper="0.2" effort="10.0" velocity="1.0"/>
+    </joint>
+
+    <link name="camera_mount_link">
+      <inertial>
+        <origin xyz="0 0 0"/>
+        <mass value="0.005"/>
+        <inertia ixx="1e-06" ixy="0" ixz="0" iyy="1e-06" iyz="0" izz="1e-06"/>
+      </inertial>
+    </link>
+
+    <!-- 관절 각도 0이면 고정일 때와 같은 자리: 위치는 관절에, 방향은 여기에 -->
+    <xacro:sensor_d435i parent="camera_mount_link" name="camera"
+                        use_nominal_extrinsics="$(arg sim)">
+      <origin xyz="0 0 0" rpy="${cam_rpy}"/>
+    </xacro:sensor_d435i>
+
+    <gazebo>
+      <!-- 목표 각도(rad)를 받아 관절을 그 각도로 돌려 유지 -->
+      <plugin filename="gz-sim-joint-position-controller-system"
+              name="gz::sim::systems::JointPositionController">
+        <joint_name>camera_mount_yaw_joint</joint_name>
+        <topic>sim/camera_mount_yaw_cmd</topic>
+        <use_velocity_commands>true</use_velocity_commands>
+        <p_gain>5.0</p_gain>
+        <i_gain>0.0</i_gain>
+        <d_gain>0.0</d_gain>
+        <cmd_max>0.5</cmd_max>
+        <cmd_min>-0.5</cmd_min>
+      </plugin>
+
+      <!-- 정답 TF용 관절 각도 보고 (/truth/joint_states) -->
+      <plugin filename="gz-sim-joint-state-publisher-system"
+              name="gz::sim::systems::JointStatePublisher">
+        <topic>truth/joint_states</topic>
+        <joint_name>camera_mount_yaw_joint</joint_name>
+        <joint_name>wheel_left_joint</joint_name>
+        <joint_name>wheel_right_joint</joint_name>
+      </plugin>
+    </gazebo>
+  </xacro:if>
 
   <!-- ===== 브래킷 (모양만): x 0.020 ~ 0.064, 폭 36 mm (앞 지지대 y=±24 사이) ===== -->
   <joint name="camera_bracket_joint" type="fixed">

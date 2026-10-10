@@ -34,3 +34,21 @@ sensors:
     xyz: [0.0532, -0.006, 0.1468]
     rpy: [-0.01745, 0.03491, -0.02618]
     time_offset: 0.0
+
+# IMU 노이즈 (연속 시간, Kalibr 형식)
+# - Gazebo는 샘플당 표준편차 σ = 노이즈 밀도 × √rate 로 환산해 사용 (xacro가 계산)
+# - 랜덤 워크는 데이터시트에 없음 → 0 (Gazebo 미적용), 실제 단계 R1에서 Allan 분산으로 실측
+imu_noise:
+  base_imu:                         # OpenCR ICM-20648
+    rate: 200                       # Hz
+    gyro_noise_density: 2.618e-4    # rad/s/√Hz  (0.015 °/s/√Hz)
+    accel_noise_density: 2.256e-3   # m/s²/√Hz   (230 µg/√Hz)
+    gyro_random_walk: 0.0           # rad/s²/√Hz (미정)
+    accel_random_walk: 0.0          # m/s³/√Hz   (미정)
+
+  camera_imu:                       # D435i BMI055
+    rate: 200
+    gyro_noise_density: 2.443e-4    # 0.014 °/s/√Hz
+    accel_noise_density: 1.471e-3   # 150 µg/√Hz
+    gyro_random_walk: 0.0
+    accel_random_walk: 0.0
