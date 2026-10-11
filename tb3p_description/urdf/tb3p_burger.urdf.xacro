@@ -218,6 +218,7 @@
 
   <!-- ===== D435i 카메라 ===== -->
   <xacro:include filename="$(find tb3p_description)/urdf/tb3p_camera.urdf.xacro"/>
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_truth.urdf.xacro"/>
 
   <!-- ===== Gazebo 플러그인: 바퀴 구동과 바퀴 각도 보고 ===== -->
   <gazebo>

@@ -115,3 +115,10 @@
   ros_type_name: "std_msgs/msg/Float64"
   gz_type_name: "gz.msgs.Double"
   direction: ROS_TO_GZ
+
+# ===== 시뮬레이션 전용: 로봇의 실제 위치 (채점용, 추정기는 구독 금지) =====
+- ros_topic_name: "truth/odom"
+  gz_topic_name: "truth/odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS

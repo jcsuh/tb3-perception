@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'calib_error = tb3p_eval.calib_error:main',
+            'record_tum = tb3p_eval.record_tum:main',
         ],
     },
 )
