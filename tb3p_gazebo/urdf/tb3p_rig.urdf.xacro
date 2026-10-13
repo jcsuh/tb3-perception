@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  손에 든 캘리브레이션 리그 (시뮬레이션 전용)
+
+  - D435i만 떼어 낸 것: 카메라 내부 배치(use_nominal_extrinsics)와 Gazebo 센서가
+    로봇에 달린 D435i와 같다 (tb3p_camera_sim.urdf.xacro 재사용, 토픽 이름도 같음)
+  - IMU 노이즈는 calib_file의 imu_noise.camera_imu (launch가 sim_truth.yaml을 넘김)
+  - tb3p::Excitation 플러그인이 중심(cx, cy, cz) 둘레로 흔든다. 중력은 플러그인이 상쇄
+  - 리그 TF가 카메라-IMU 외부 파라미터의 정답 (camera_infra1_optical_frame ↔ camera_imu_optical_frame)
+-->
+<robot name="tb3p_rig" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_common.urdf.xacro"/>
+  <xacro:include filename="$(find realsense2_description)/urdf/_d435i.urdf.xacro"/>
+
+  <xacro:arg name="cx" default="0.15"/>
+  <xacro:arg name="cy" default="0.0"/>
+  <xacro:arg name="cz" default="0.1375"/>
+
+  <!-- 손잡이 (모양만) + 리그 질량 -->
+  <link name="rig_base">
+    <visual>
+      <origin xyz="0 0 -0.05" rpy="0 0 0"/>
+      <geometry><box size="0.025 0.025 0.10"/></geometry>
+      <material name="rig_handle"><color rgba="0.2 0.2 0.25 1.0"/></material>
+    </visual>
+    <inertial>
+      <origin xyz="0 0 -0.03" rpy="0 0 0"/>
+      <mass value="0.2"/>
+      <inertia ixx="2e-4" ixy="0" ixz="0" iyy="2e-4" iyz="0" izz="5e-5"/>
+    </inertial>
+  </link>
+
+  <!-- D435i: 바닥 삼각대 나사를 손잡이 위에 고정 -->
+  <xacro:sensor_d435i parent="rig_base" name="camera" use_nominal_extrinsics="true">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:sensor_d435i>
+
+  <!-- Gazebo 센서: 컬러, 깊이, (enable_infra) IR 2개, IMU -->
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_camera_sim.urdf.xacro"/>
+
+  <gazebo>
+    <plugin filename="tb3p_excitation" name="tb3p::Excitation">
+      <center>$(arg cx) $(arg cy) $(arg cz) 0 0 0</center>
+      <amplitude_xyz>0.10 0.10 0.06</amplitude_xyz>
+      <amplitude_rpy_deg>20 15 20</amplitude_rpy_deg>
+      <freq_xyz>0.37 0.53 0.71</freq_xyz>
+      <freq_rpy>0.61 0.43 0.29</freq_rpy>
+      <start_delay>5.0</start_delay>
+      <ramp>3.0</ramp>
+    </plugin>
+  </gazebo>
+
+</robot>

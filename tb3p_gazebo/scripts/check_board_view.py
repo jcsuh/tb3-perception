@@ -43,7 +43,7 @@ def detector_params():
 
 
 def detect_tags(gray):
-    """AprilTag 36h11 검출 결과 (corners, ids). OpenCV 4.6과 4.7+ 모두 지원."""
+    """태그(AprilTag 36h11) 검출 결과 (corners, ids). OpenCV 4.6과 4.7+ 모두 지원."""
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
     if hasattr(cv2.aruco, 'ArucoDetector'):
         detector = cv2.aruco.ArucoDetector(dictionary, detector_params())

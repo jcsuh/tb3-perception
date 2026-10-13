@@ -67,7 +67,7 @@ def detector_params():
 
 
 def detect_tags(img):
-    """AprilTag 36h11을 검출해 {id: 중심 픽셀}을 돌려준다 (OpenCV 4.6과 4.7+ 모두 지원)."""
+    """태그(AprilTag 36h11)를 검출해 {id: 중심 픽셀}을 돌려준다 (OpenCV 4.6과 4.7+ 모두 지원)."""
     small = cv2.resize(img, None, fx=0.25, fy=0.25, interpolation=cv2.INTER_AREA)
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
     if hasattr(cv2.aruco, 'ArucoDetector'):
@@ -191,9 +191,9 @@ def main():
     x0, y0, x1, y1 = -s, -s, w - s, h - s                 # 원점 = 0번 태그 왼쪽 아래 모서리
     with open(os.path.join(a.out_dir, 'meshes', 'board.obj'), 'w') as f:
         f.write(OBJ.format(x0=x0, y0=y0, x1=x1, y1=y1))
-    fmt = dict(name=name, cols=a.cols, rows=a.rows, tag_mm=a.tag_size * 1000,
-               spacing=a.tag_spacing, w=w, h=h, w_mm=w * 1000, h_mm=h * 1000,
-               cx=(x0 + x1) / 2, cy=(y0 + y1) / 2)
+    fmt = {'name': name, 'cols': a.cols, 'rows': a.rows, 'tag_mm': a.tag_size * 1000,
+           'spacing': a.tag_spacing, 'w': w, 'h': h, 'w_mm': w * 1000, 'h_mm': h * 1000,
+           'cx': (x0 + x1) / 2, 'cy': (y0 + y1) / 2}
     with open(os.path.join(a.out_dir, 'model.sdf'), 'w') as f:
         f.write(SDF.format(**fmt))
     with open(os.path.join(a.out_dir, 'model.config'), 'w') as f:
