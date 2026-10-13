@@ -1,0 +1,10 @@
+# Kalibr IMU config: D435i IMU (BMI055), simulation
+# - white noise densities = datasheet values (same as calibration.yaml imu_noise.camera_imu)
+# - random walk is zero in simulation, but Kalibr needs non-zero values -> small placeholders
+# - real stage (R1): replace all four with Allan variance measurements
+rostopic: /camera/camera/imu
+update_rate: 200.0
+accelerometer_noise_density: 1.471e-3   # m/s^2/sqrt(Hz)  (150 ug/sqrt(Hz))
+accelerometer_random_walk: 1.0e-4       # m/s^3/sqrt(Hz)
+gyroscope_noise_density: 2.443e-4       # rad/s/sqrt(Hz)  (0.014 deg/s/sqrt(Hz))
+gyroscope_random_walk: 1.0e-5           # rad/s^2/sqrt(Hz)
