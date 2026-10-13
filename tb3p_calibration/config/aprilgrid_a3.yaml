@@ -1,0 +1,8 @@
+# Kalibr AprilGrid 타깃 (A3 가로 인쇄용, 시뮬레이션 보드와 실제 보드가 같음)
+# 보드 크기: 가로 6 x 0.05 + 5 x 0.015 = 0.375 m, 세로 4 x 0.05 + 3 x 0.015 = 0.245 m
+# 실제 단계에서는 인쇄 후 태그 크기를 캘리퍼스로 재서 tagSize를 실측값으로 교체 (R2)
+target_type: 'aprilgrid'
+tagCols: 6
+tagRows: 4
+tagSize: 0.05        # 태그 한 변 (m)
+tagSpacing: 0.3      # 태그 사이 간격 / 태그 크기
