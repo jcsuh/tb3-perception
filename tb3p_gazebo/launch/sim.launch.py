@@ -1,7 +1,12 @@
 """
 Gazebo에 tb3p 설계도로 로봇을 띄운다.
 
-1) Gazebo 실행 (turtlebot3_world 월드)
+인자
+- world: turtlebot3_world(기본) 또는 calib (빈 바닥 + AprilGrid 보드)
+- enable_infra: true면 D435i IR 카메라 2개를 켠다 (Kalibr용, 시뮬레이션이 느려짐)
+- x_pose, y_pose: 로봇 스폰 위치 (비우면 월드별 기본값)
+
+1) Gazebo 실행
 2) 공칭 설계도 -> /tf (로봇이 믿는 위치, calibration.yaml)
 3) 정답 설계도 -> /truth/robot_description, /truth/tf_static (sim_truth.yaml, 채점 전용)
 4) 정답 설계도로 Gazebo에 로봇 스폰 (Gazebo 속 로봇 = 실제로 조립된 상태)
@@ -13,11 +18,46 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (AppendEnvironmentVariable, DeclareLaunchArgument,
-                            IncludeLaunchDescription)
+                            IncludeLaunchDescription, OpaqueFunction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+
+# 월드 이름 -> (패키지, worlds 폴더 안 파일, 기본 스폰 x, y)
+WORLDS = {
+    'turtlebot3_world': ('turtlebot3_gazebo', 'turtlebot3_world.world', '-2.0', '-0.5'),
+    'calib': ('tb3p_gazebo', 'calib.sdf', '0.0', '0.0'),
+}
+
+
+def gazebo_and_spawn(context):
+    """월드 인자에 맞춰 Gazebo를 켜고 정답 설계도로 로봇을 스폰한다."""
+    name = LaunchConfiguration('world').perform(context)
+    if name not in WORLDS:
+        raise RuntimeError(f'world는 {list(WORLDS)} 중 하나여야 합니다: {name}')
+    pkg, filename, x_default, y_default = WORLDS[name]
+    world = os.path.join(get_package_share_directory(pkg), 'worlds', filename)
+    x = LaunchConfiguration('x_pose').perform(context) or x_default
+    y = LaunchConfiguration('y_pose').perform(context) or y_default
+    ros_gz_sim = get_package_share_directory('ros_gz_sim')
+    return [
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
+            launch_arguments={'gz_args': f'-r -v2 {world}',
+                              'on_exit_shutdown': 'true'}.items(),
+        ),
+        Node(
+            package='ros_gz_sim',
+            executable='create',
+            output='screen',
+            arguments=['-name', 'tb3p',
+                       '-topic', '/truth/robot_description',
+                       '-x', x,
+                       '-y', y,
+                       '-z', '0.01'],
+        ),
+    ]
 
 
 def generate_launch_description():
@@ -26,35 +66,34 @@ def generate_launch_description():
     rs_description = get_package_share_directory('realsense2_description')
     tb3p_description = get_package_share_directory('tb3p_description')
     tb3p_gazebo = get_package_share_directory('tb3p_gazebo')
-    ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
-    world = os.path.join(tb3_gazebo, 'worlds', 'turtlebot3_world.world')
     bridge_config = os.path.join(tb3p_gazebo, 'config', 'bridge.yaml')
     xacro_file = os.path.join(tb3p_description, 'urdf', 'tb3p_burger.urdf.xacro')
     truth_calib = os.path.join(tb3p_gazebo, 'config', 'sim_truth.yaml')
 
     truth_description = ParameterValue(
-        Command(['xacro ', xacro_file, ' calib_file:=', truth_calib, ' sim:=true truth:=true']),
+        Command(['xacro ', xacro_file, ' calib_file:=', truth_calib,
+                 ' sim:=true truth:=true enable_infra:=', LaunchConfiguration('enable_infra')]),
         value_type=str)
 
-    x_pose = LaunchConfiguration('x_pose')
-    y_pose = LaunchConfiguration('y_pose')
-
     return LaunchDescription([
-        DeclareLaunchArgument('x_pose', default_value='-2.0'),
-        DeclareLaunchArgument('y_pose', default_value='-0.5'),
+        DeclareLaunchArgument('world', default_value='turtlebot3_world',
+                              description='turtlebot3_world 또는 calib'),
+        DeclareLaunchArgument('enable_infra', default_value='false',
+                              description='true면 D435i IR 카메라 2개를 켠다'),
+        DeclareLaunchArgument('x_pose', default_value='',
+                              description='스폰 x (비우면 월드 기본값)'),
+        DeclareLaunchArgument('y_pose', default_value='',
+                              description='스폰 y (비우면 월드 기본값)'),
 
-        # Gazebo가 월드 모델(model://)과 로봇·카메라 메시(package://)를 찾을 위치
+        # Gazebo가 모델(model://)과 로봇·카메라 메시(package://)를 찾을 위치
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3_gazebo, 'models')),
+        AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3p_gazebo, 'models')),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(tb3_description)),
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.dirname(rs_description)),
 
-        # 1) Gazebo
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-            launch_arguments={'gz_args': f'-r -v2 {world}',
-                              'on_exit_shutdown': 'true'}.items(),
-        ),
+        # 1) Gazebo + 4) 정답 설계도로 로봇 스폰 (월드에 따라 달라서 함께 처리)
+        OpaqueFunction(function=gazebo_and_spawn),
 
         # 2) 공칭 설계도 → /tf (로봇과 모든 추정기가 보는 값)
         IncludeLaunchDescription(
@@ -73,18 +112,6 @@ def generate_launch_description():
             parameters=[{'robot_description': truth_description,
                          'use_sim_time': True}],
             remappings=[('/tf', '/truth/tf'), ('/tf_static', '/truth/tf_static')],
-        ),
-
-        # 4) 정답 설계도로 Gazebo에 로봇 생성
-        Node(
-            package='ros_gz_sim',
-            executable='create',
-            output='screen',
-            arguments=['-name', 'tb3p',
-                       '-topic', '/truth/robot_description',
-                       '-x', x_pose,
-                       '-y', y_pose,
-                       '-z', '0.01'],
         ),
 
         # 5) Gazebo <-> ROS 토픽 브리지
