@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<!--
+  tb3p 설계도 공통 부분: 스위치(xacro arg), 캘리브레이션 YAML 읽기, 공통 매크로
+  - tb3p_burger.urdf.xacro(로봇)와 tb3p_gazebo/urdf/tb3p_rig.urdf.xacro(손에 든 리그)가 함께 쓴다
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- ===== 스위치와 캘리브레이션 파일 ===== -->
+  <xacro:arg name="calib_file" default="$(find tb3p_description)/config/calibration.yaml"/>
+  <xacro:arg name="sim" default="false"/>
+  <xacro:arg name="truth" default="false"/>
+  <!-- Gazebo IMU 노이즈 배율 (반복 실험용, 1 = 데이터시트 값) -->
+  <xacro:arg name="imu_noise_scale" default="1.0"/>
+  <xacro:property name="calib" value="${xacro.load_yaml('$(arg calib_file)')}"/>
+
+  <!-- 센서 조인트: 위치와 방향을 YAML의 sensors에서 읽는다 -->
+  <xacro:macro name="calibrated_joint" params="joint key">
+    <xacro:property name="s" value="${calib['sensors'][key]}"/>
+    <joint name="${joint}" type="fixed">
+      <parent link="${s['parent']}"/>
+      <child link="${s['child']}"/>
+      <origin xyz="${s['xyz'][0]} ${s['xyz'][1]} ${s['xyz'][2]}"
+              rpy="${s['rpy'][0]} ${s['rpy'][1]} ${s['rpy'][2]}"/>
+    </joint>
+  </xacro:macro>
+
+  <!-- Gazebo IMU 주기와 노이즈: YAML의 imu_noise에서 읽어 샘플당 σ로 환산 -->
+  <xacro:macro name="gz_imu_noise" params="key">
+    <xacro:property name="n" value="${calib['imu_noise'][key]}"/>
+    <xacro:property name="sg" value="${n['gyro_noise_density'] * n['rate'] ** 0.5 * $(arg imu_noise_scale)}"/>
+    <xacro:property name="sa" value="${n['accel_noise_density'] * n['rate'] ** 0.5 * $(arg imu_noise_scale)}"/>
+    <update_rate>${n['rate']}</update_rate>
+    <imu>
+      <angular_velocity>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></z>
+      </angular_velocity>
+      <linear_acceleration>
+        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></x>
+        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></y>
+        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></z>
+      </linear_acceleration>
+    </imu>
+  </xacro:macro>
+
+</robot>

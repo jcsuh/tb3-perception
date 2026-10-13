@@ -7,12 +7,15 @@ Kalibr 결과를 시뮬레이션 정답과 비교해 채점한다.
 - 카메라-IMU, 카메라-카메라 외부 파라미터: /rig/tf_static (리그 설계도)
 - 시간 오프셋: 0 (Gazebo는 모든 센서가 같은 시계)
 
+--json 파일을 주면 같은 결과를 기계가 읽을 수 있는 형태로도 저장한다 (반복 실험 집계용).
+
 사용 예:
   python3 kalibr_score.py ~/kalibr_data/rig_01 ~/kalibr_data/rig_01-camchain-imucam.yaml \
       --imu-frame camera_imu_optical_frame \
       --cam-frames camera_infra1_optical_frame camera_infra2_optical_frame
 """
 import argparse
+import json
 import os
 
 import numpy as np
@@ -84,13 +87,15 @@ def rotation_angle_deg(r):
 
 
 def compare(name, t_est, t_true):
-    """두 4x4 변환을 비교해 한 줄로 출력한다."""
+    """두 4x4 변환을 비교해 한 줄로 출력하고, 오차를 dict로 돌려준다."""
     d_rot = rotation_angle_deg(t_est[:3, :3].T @ t_true[:3, :3])
     d_pos = (t_est[:3, 3] - t_true[:3, 3]) * 1000
     print(f'  {name:<14} rot err {d_rot:6.3f} deg   pos err {np.linalg.norm(d_pos):6.2f} mm '
           f'({d_pos[0]:+.2f}, {d_pos[1]:+.2f}, {d_pos[2]:+.2f})   '
           f'true t (mm) ({t_true[0, 3] * 1000:+.2f}, {t_true[1, 3] * 1000:+.2f}, '
           f'{t_true[2, 3] * 1000:+.2f})')
+    return {'rot_err_deg': d_rot, 'pos_err_mm': float(np.linalg.norm(d_pos)),
+            'pos_err_xyz_mm': d_pos.tolist()}
 
 
 def main():
@@ -101,7 +106,9 @@ def main():
     p.add_argument('--imu-frame', default='camera_imu_optical_frame')
     p.add_argument('--cam-frames', nargs='+',
                    default=['camera_infra1_optical_frame', 'camera_infra2_optical_frame'])
+    p.add_argument('--json', help='결과를 저장할 JSON 파일 (선택)')
     a = p.parse_args()
+    score = {}
 
     with open(os.path.expanduser(a.result), encoding='utf-8') as f:
         result = yaml.safe_load(f)
@@ -113,6 +120,7 @@ def main():
     for cam, topic in zip(cams, topics):
         fu, fv, pu, pv = result[cam]['intrinsics']
         k = infos[topic].k
+        score[f'{cam}_intrinsics_err_px'] = [fu - k[0], fv - k[4], pu - k[2], pv - k[5]]
         print(f'  {cam} fx {fu:8.2f} ({fu - k[0]:+.2f})  fy {fv:8.2f} ({fv - k[4]:+.2f})  '
               f'cx {pu:7.2f} ({pu - k[2]:+.2f})  cy {pv:7.2f} ({pv - k[5]:+.2f})  '
               f'dist {np.round(result[cam]["distortion_coeffs"], 4).tolist()}')
@@ -122,14 +130,22 @@ def main():
         t_root_cam = poses[a.cam_frames[i]]
         if 'T_cn_cnm1' in result[cam]:
             t_root_prev = poses[a.cam_frames[i - 1]]
-            compare(f'{cam}<-cam{i - 1}', np.array(result[cam]['T_cn_cnm1']),
-                    np.linalg.inv(t_root_cam) @ t_root_prev)
+            score[f'{cam}_from_cam{i - 1}'] = compare(
+                f'{cam}<-cam{i - 1}', np.array(result[cam]['T_cn_cnm1']),
+                np.linalg.inv(t_root_cam) @ t_root_prev)
         if 'T_cam_imu' in result[cam]:
-            compare(f'{cam}<-imu', np.array(result[cam]['T_cam_imu']),
-                    np.linalg.inv(t_root_cam) @ poses[a.imu_frame])
+            score[f'{cam}_from_imu'] = compare(
+                f'{cam}<-imu', np.array(result[cam]['T_cam_imu']),
+                np.linalg.inv(t_root_cam) @ poses[a.imu_frame])
         if 'timeshift_cam_imu' in result[cam]:
-            print(f'  {cam} time shift {result[cam]["timeshift_cam_imu"] * 1000:+.3f} ms '
-                  f'(정답 0)')
+            shift_ms = result[cam]['timeshift_cam_imu'] * 1000
+            score[f'{cam}_timeshift_ms'] = shift_ms
+            print(f'  {cam} time shift {shift_ms:+.3f} ms (정답 0)')
+
+    if a.json:
+        with open(os.path.expanduser(a.json), 'w', encoding='utf-8') as f:
+            json.dump(score, f, indent=2)
+        print(f'saved {a.json}')
 
 
 if __name__ == '__main__':

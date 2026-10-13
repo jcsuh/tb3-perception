@@ -10,42 +10,8 @@
 -->
 <robot name="tb3p_burger" xmlns:xacro="http://ros.org/wiki/xacro">
 
-  <!-- ===== 스위치와 캘리브레이션 파일 ===== -->
-  <xacro:arg name="calib_file" default="$(find tb3p_description)/config/calibration.yaml"/>
-  <xacro:arg name="sim" default="false"/>
-  <xacro:arg name="truth" default="false"/>
-  <xacro:property name="calib" value="${xacro.load_yaml('$(arg calib_file)')}"/>
-
-  <!-- 센서 조인트: 위치와 방향을 YAML의 sensors에서 읽는다 -->
-  <xacro:macro name="calibrated_joint" params="joint key">
-    <xacro:property name="s" value="${calib['sensors'][key]}"/>
-    <joint name="${joint}" type="fixed">
-      <parent link="${s['parent']}"/>
-      <child link="${s['child']}"/>
-      <origin xyz="${s['xyz'][0]} ${s['xyz'][1]} ${s['xyz'][2]}"
-              rpy="${s['rpy'][0]} ${s['rpy'][1]} ${s['rpy'][2]}"/>
-    </joint>
-  </xacro:macro>
-
-  <!-- Gazebo IMU 주기와 노이즈: YAML의 imu_noise에서 읽어 샘플당 σ로 환산 -->
-  <xacro:macro name="gz_imu_noise" params="key">
-    <xacro:property name="n" value="${calib['imu_noise'][key]}"/>
-    <xacro:property name="sg" value="${n['gyro_noise_density'] * n['rate'] ** 0.5}"/>
-    <xacro:property name="sa" value="${n['accel_noise_density'] * n['rate'] ** 0.5}"/>
-    <update_rate>${n['rate']}</update_rate>
-    <imu>
-      <angular_velocity>
-        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></x>
-        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></y>
-        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sg}</stddev></noise></z>
-      </angular_velocity>
-      <linear_acceleration>
-        <x><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></x>
-        <y><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></y>
-        <z><noise type="gaussian"><mean>0.0</mean><stddev>${sa}</stddev></noise></z>
-      </linear_acceleration>
-    </imu>
-  </xacro:macro>
+  <!-- ===== 스위치, 캘리브레이션 파일, 공통 매크로 (tb3p_common) ===== -->
+  <xacro:include filename="$(find tb3p_description)/urdf/tb3p_common.urdf.xacro"/>
 
   <!-- ===== 색 ===== -->
   <material name="light_black"><color rgba="0.4 0.4 0.4 1.0"/></material>
