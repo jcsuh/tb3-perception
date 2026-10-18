@@ -213,8 +213,8 @@ def image_to_gray(msg):
     return cv2.cvtColor(img, code)
 
 
-def detect_tags(gray):
-    """보드의 태그(AprilTag 36h11, 검은 테두리 2칸)를 검출한다. OpenCV 4.6과 4.7+ 모두 지원."""
+def detect_tags_once(gray):
+    """보드의 태그(AprilTag 36h11, 검은 테두리 2칸)를 한 번 검출한다. OpenCV 4.6과 4.7+ 모두 지원."""
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
     if hasattr(cv2.aruco, 'ArucoDetector'):
         params = cv2.aruco.DetectorParameters()
@@ -227,6 +227,33 @@ def detect_tags(gray):
         params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
         corners, ids, _ = cv2.aruco.detectMarkers(gray, dictionary, parameters=params)
     return corners, ids
+
+
+def detect_tags(gray):
+    """
+    원본에서 태그를 찾고, 원본에서 못 찾은 태그는 2배 확대본에서 찾아 보탠다.
+
+    먼 보드는 태그가 작아(칸 하나가 3 px 안팎) 원본에서는 무늬를 못 읽는 경우가 많다 (세션 12).
+    원본에서 찾은 태그는 그대로 쓰고(가까운 자세의 결과가 바뀌지 않게), 확대본에서만 찾은
+    태그의 모서리는 원본 픽셀 좌표로 되돌린다: x = (x2 + 0.5) / 2 - 0.5
+    (cv2.resize의 픽셀 중심 약속. 그냥 2로 나누면 0.25 px 치우침이 생긴다).
+    """
+    corners, ids = detect_tags_once(gray)
+    corners = list(corners)
+    found = set() if ids is None else {int(i) for i in ids.ravel()}
+    big = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    corners2, ids2 = detect_tags_once(big)
+    extra = []
+    if ids2 is not None:
+        for c, i in zip(corners2, ids2.ravel()):
+            if int(i) not in found:
+                corners.append(((c + 0.5) / 2.0 - 0.5).astype(np.float32))
+                extra.append(int(i))
+    all_ids = sorted(found) if ids is None else [int(i) for i in ids.ravel()]
+    all_ids += extra
+    if not all_ids:
+        return (), None
+    return tuple(corners), np.array(all_ids, dtype=np.int32).reshape(-1, 1)
 
 
 def add_edges(edges, msg):
