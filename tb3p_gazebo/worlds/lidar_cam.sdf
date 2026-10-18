@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!--
+  LiDAR-카메라 캘리브레이션 월드 (W5-6): 빈 바닥 + A3 AprilGrid 보드 1장
+  - 로봇은 원점에서 +x를 바라보고 스폰된다 (sim.launch.py world:=lidar_cam)
+  - 보드 중심을 LiDAR 스캔 높이(바닥 위 약 0.233 m = base_link 0.010 + base_scan 0.223)에 맞춰
+    스캔 한 줄이 보드 가운데를 가로지르게 했다 (calib.sdf의 보드는 바닥에 서 있어 스캔이 위쪽 끝을 지남)
+  - 보드 중심: 월드 (0.75, 0.0, 0.233), 로봇 쪽을 보되 수직축 둘레로 15° 돌림 (일반적인 자세)
+  - pose의 위치 = 보드 원점(0번 태그 왼쪽 아래 모서리) = 중심 - R x (0.1875, 0.1225, 0)
+    rpy (90°, 0, -75°): 보드의 y(위) → 월드 +z, 앞면 법선 → 월드 (-0.966, -0.259, 0)
+  - 실제로는 삼각대에 세운 보드 (받침대는 스캔 높이 아래라 LiDAR에 안 보임 → 생략)
+  - 세션 13에서 보드 자세를 여러 개로 바꿀 때는 gz service set_pose로 이 모델을 옮긴다
+-->
+<sdf version="1.9">
+  <world name="lidar_cam">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.8 0.8 0.8 1</background>
+      <grid>false</grid>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><diffuse>0.7 0.7 0.7 1</diffuse><ambient>0.7 0.7 0.7 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://aprilgrid_a3</uri>
+      <name>aprilgrid</name>
+      <pose>0.7015 0.1811 0.1105 1.5708 0 -1.309</pose>
+    </include>
+  </world>
+</sdf>

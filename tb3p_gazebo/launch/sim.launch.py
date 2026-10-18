@@ -2,7 +2,8 @@
 Gazebo에 tb3p 설계도로 로봇을 띄운다.
 
 인자
-- world: turtlebot3_world(기본) 또는 calib (빈 바닥 + AprilGrid 보드)
+- world: turtlebot3_world(기본), calib (빈 바닥 + AprilGrid 보드),
+         lidar_cam (보드를 LiDAR 스캔 높이에 세운 LiDAR-카메라 캘리브레이션용)
 - enable_infra: true면 D435i IR 카메라 2개를 켠다 (Kalibr용, 시뮬레이션이 느려짐)
 - x_pose, y_pose: 로봇 스폰 위치 (비우면 월드별 기본값)
 
@@ -28,6 +29,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 WORLDS = {
     'turtlebot3_world': ('turtlebot3_gazebo', 'turtlebot3_world.world', '-2.0', '-0.5'),
     'calib': ('tb3p_gazebo', 'calib.sdf', '0.0', '0.0'),
+    'lidar_cam': ('tb3p_gazebo', 'lidar_cam.sdf', '0.0', '0.0'),
 }
 
 
@@ -78,7 +80,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('world', default_value='turtlebot3_world',
-                              description='turtlebot3_world 또는 calib'),
+                              description='turtlebot3_world, calib, lidar_cam 중 하나'),
         DeclareLaunchArgument('enable_infra', default_value='false',
                               description='true면 D435i IR 카메라 2개를 켠다'),
         DeclareLaunchArgument('x_pose', default_value='',
