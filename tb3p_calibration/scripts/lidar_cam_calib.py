@@ -14,9 +14,21 @@
   - 자세별 잔차 RMS (추정 전 -> 후)
   - 결과 YAML (기본: 입력 JSON 옆 *_result.yaml)
 
+가중치 (--weighted, 세션 13)
+  점 하나의 잔차가 믿을 만한 정도 = LiDAR 거리 노이즈 + 카메라 평면의 불확실성
+  w = 1 / sqrt(σ_LiDAR² + σ_평면²): 먼 보드처럼 평면이 덜 정확한 자세의 점은 덜 반영된다
+  (σ_평면은 PnP 공분산에서 점마다 계산, 데이터에 pose_cov가 있어야 함)
+
+LiDAR 빔 높이각 (--beam-elev-deg, 세션 13)
+  2D LiDAR의 빔이 회전축에 정확히 수직이 아니면 스캔은 평면이 아니라 얕은 원뿔이 된다.
+  Gazebo GPU LiDAR는 모든 방향에서 빔이 약 0.44° 아래를 향함을 lidar_truth_check.py로 확인했다.
+  카메라가 보는 앞쪽에서는 이 원뿔이 "LiDAR가 숙여 붙음"과 똑같이 보여서, 데이터만으로는
+  구분할 수 없다 (잔차가 그대로). 알려진 값을 주면 점을 원뿔 위의 실제 3D 위치로 바꿔 쓴다.
+
 사용 예:
   python3 lidar_cam_calib.py ~/lidar_cam_data/session12.json
   python3 lidar_cam_calib.py ~/lidar_cam_data/session12.json --only-upright   # 실험: 똑바로 선 자세만
+  python3 lidar_cam_calib.py ~/lidar_cam_data/session13.json --weighted
 """
 import argparse
 import json
@@ -47,23 +59,76 @@ def apply(t0, x):
     return t
 
 
-def stack(poses):
-    """자세들을 점 단위 배열로 펼친다: 점(N x 3), 평면 법선(N x 3), 거리(N), 자세 번호(N)."""
-    pts, ns, ds, idx = [], [], [], []
+def plane_sigma(t_cam_board, cov, q):
+    """
+    카메라 평면의 불확실성이 점 q(카메라 좌표계, M x 3)의 점-평면 거리에 주는 1σ (m).
+
+    보드 자세 6개 숫자(회전 벡터, 위치)를 조금씩 바꿨을 때 거리가 변하는 정도(기울기 g)를
+    수치 미분으로 구하고, σ² = g Σ gᵀ 로 계산한다.
+    """
+    base = np.r_[cv2.Rodrigues(np.asarray(t_cam_board)[:3, :3])[0].ravel(),
+                 np.asarray(t_cam_board)[:3, 3]]
+
+    def dist(params):
+        n = cv2.Rodrigues(params[:3])[0][:, 2]
+        return q @ n - n @ params[3:]
+
+    eps = 1e-6
+    g = np.stack([(dist(base + eps * e) - dist(base - eps * e)) / (2 * eps)
+                  for e in np.eye(6)], axis=1)
+    return np.sqrt(np.einsum('ij,jk,ik->i', g, np.asarray(cov), g))
+
+
+def point_weights(poses, t_init, sigma_lidar):
+    """자세별 점 가중치 1/sqrt(σ_LiDAR² + σ_평면²) (1/m)와 자세별 평균 σ_평면 (m)."""
+    ws, sig = [], []
+    for p in poses:
+        q = np.asarray(p['points'], dtype=np.float64)
+        qc = q @ t_init[:3, :3].T + t_init[:3, 3]
+        sp = plane_sigma(p['t_cam_board'], p['pose_cov'], qc)
+        ws.append(1.0 / np.sqrt(sigma_lidar ** 2 + sp ** 2))
+        sig.append(float(np.mean(sp)))
+    return ws, sig
+
+
+def apply_beam_elevation(points, elev_deg):
+    """
+    스캔 점(z = 0)을 빔 높이각 elev_deg(°, 아래가 -)인 원뿔 위의 실제 3D 위치로 바꾼다.
+
+    거리 r과 방위각 a는 그대로 두고 (r cosε cos a, r cosε sin a, r sinε)로 만든다.
+    """
+    q = np.asarray(points, dtype=np.float64)
+    if not elev_deg:
+        return q
+    r = np.linalg.norm(q[:, :2], axis=1)
+    a = np.arctan2(q[:, 1], q[:, 0])
+    e = np.radians(elev_deg)
+    return np.column_stack([r * np.cos(e) * np.cos(a), r * np.cos(e) * np.sin(a), r * np.sin(e)])
+
+
+def stack(poses, weights=None):
+    """
+    자세들을 점 단위 배열로 펼친다.
+
+    돌려주는 값: 점(N x 3), 평면 법선(N x 3), 거리(N), 자세 번호(N), 가중치(N, 없으면 1)
+    """
+    pts, ns, ds, idx, ws = [], [], [], [], []
     for i, p in enumerate(poses):
         q = np.asarray(p['points'], dtype=np.float64)
         pts.append(q)
         ns.append(np.tile(p['n'], (len(q), 1)))
         ds.append(np.full(len(q), p['d']))
         idx.append(np.full(len(q), i))
-    return np.vstack(pts), np.vstack(ns), np.concatenate(ds), np.concatenate(idx)
+        ws.append(np.ones(len(q)) if weights is None else weights[i])
+    return (np.vstack(pts), np.vstack(ns), np.concatenate(ds), np.concatenate(idx),
+            np.concatenate(ws))
 
 
-def residuals(x, t0, pts, ns, ds):
-    """보정 x를 적용했을 때 모든 점의 점-평면 거리 (m)."""
+def residuals(x, t0, pts, ns, ds, ws=1.0):
+    """보정 x를 적용했을 때 모든 점의 점-평면 거리 (m), 가중치 ws를 곱해서."""
     t = apply(t0, x)
     q = pts @ t[:3, :3].T + t[:3, 3]
-    return np.sum(q * ns, axis=1) - ds
+    return (np.sum(q * ns, axis=1) - ds) * ws
 
 
 def rotation_angle_deg(r):
@@ -78,19 +143,23 @@ def errors(t_est, t_true):
     return rot, float(np.linalg.norm(dpos)), dpos
 
 
-def calibrate(poses, t_init):
-    """점-평면 잔차 최소화. 돌려주는 값: (추정 변환, least_squares 결과, 점 배열들)."""
-    pts, ns, ds, idx = stack(poses)
-    sol = least_squares(residuals, np.zeros(6), args=(t_init, pts, ns, ds), method='lm',
+def calibrate(poses, t_init, weights=None):
+    """
+    점-평면 잔차 최소화 (weights가 있으면 가중 최소제곱).
+
+    돌려주는 값: (추정 변환, least_squares 결과, (점, 법선, 거리, 자세 번호, 가중치))
+    """
+    pts, ns, ds, idx, ws = stack(poses, weights)
+    sol = least_squares(residuals, np.zeros(6), args=(t_init, pts, ns, ds, ws), method='lm',
                         x_scale=UNIT)
-    return apply(t_init, sol.x), sol, (pts, ns, ds, idx)
+    return apply(t_init, sol.x), sol, (pts, ns, ds, idx, ws)
 
 
 def uncertainty(sol, n_points):
     """
     추정값의 1σ 불확실성 (카메라 축별 회전 °, 위치 mm)과 가장 약한 방향.
 
-    공분산 ≈ s² (JᵀJ)⁻¹, s² = 잔차 제곱합 / (점 수 - 6).
+    공분산 ≈ s² (JᵀJ)⁻¹, s² = (가중) 잔차 제곱합 / (점 수 - 6).
     JᵀJ의 고유값이 0에 가까운 방향 = 데이터로 거의 정해지지 않는 방향
     (회전과 위치를 비교하려고 합격 기준 단위 UNIT으로 맞춘 뒤 계산).
     """
@@ -119,6 +188,12 @@ def main():
     ap.add_argument('--only-upright', action='store_true',
                     help='실험: 젖히지 않은(tilt 0) 자세만 사용')
     ap.add_argument('--max-poses', type=int, default=0, help='앞에서부터 이 개수만 사용 (0 = 전부)')
+    ap.add_argument('--weighted', action='store_true',
+                    help='LiDAR 노이즈와 카메라 평면 불확실성으로 점마다 가중치')
+    ap.add_argument('--sigma-lidar', type=float, default=0.0,
+                    help='점 하나의 LiDAR 거리 노이즈 (mm). 0이면 10 / √(자세당 스캔 수)')
+    ap.add_argument('--beam-elev-deg', type=float, default=0.0,
+                    help='LiDAR 빔 높이각 (°, 아래가 -). Gazebo GPU LiDAR는 약 -0.44')
     ap.add_argument('--out', default='', help='결과 YAML (기본: 입력 옆 *_result.yaml)')
     args = ap.parse_args()
 
@@ -133,13 +208,24 @@ def main():
         raise SystemExit(f'자세가 {len(poses)}개뿐: 최소 2개, 권장 10개 이상')
     t_nom = np.array(data['T_nominal'])
     t_true = np.array(data['T_truth'])
+    if args.beam_elev_deg:
+        poses = [dict(p, points=apply_beam_elevation(p['points'], args.beam_elev_deg))
+                 for p in poses]
 
-    t_est, sol, (pts, ns, ds, idx) = calibrate(poses, t_nom)
+    weights, sig_plane = None, [float('nan')] * len(poses)
+    if args.weighted:
+        sigma_l = (args.sigma_lidar or 10.0 / np.sqrt(data.get('scans_per_pose', 1))) / 1000
+        weights, sig_plane = point_weights(poses, t_nom, sigma_l)
+    t_est, sol, (pts, ns, ds, idx, _) = calibrate(poses, t_nom, weights)
     r0 = residuals(np.zeros(6), t_nom, pts, ns, ds) * 1000
-    r1 = sol.fun * 1000
+    r1 = residuals(sol.x, t_nom, pts, ns, ds) * 1000
     rot_std, pos_std, eigval, weakest = uncertainty(sol, len(pts))
 
     note = '  (실험: 똑바로 선 자세만)' if args.only_upright else ''
+    if args.weighted:
+        note += f'  (가중치: σ_LiDAR {sigma_l * 1000:.1f} mm + 자세별 σ_평면)'
+    if args.beam_elev_deg:
+        note += f'  (빔 높이각 {args.beam_elev_deg:+.3f}°)'
     print(f'자세 {len(poses)}개, 점 {len(pts)}개, 반복 {sol.nfev}회{note}')
     print('[자세별 잔차 RMS, mm]  추정 전(공칭) -> 추정 후')
     for i, p in enumerate(poses):
@@ -147,8 +233,9 @@ def main():
         before = np.sqrt(np.mean(r0[m] ** 2))
         after = np.sqrt(np.mean(r1[m] ** 2))
         name, dist, yaw, tilt = p['name'], p['dist'], p['yaw_deg'], p['tilt_deg']
+        sp = f'   σ_평면 {sig_plane[i] * 1000:.1f} mm' if args.weighted else ''
         print(f'    {name}  거리 {dist:.2f} yaw {yaw:+4d} tilt {tilt:+4d}  '
-              f'{before:6.1f} -> {after:5.1f}   (점 {int(m.sum())})')
+              f'{before:6.1f} -> {after:5.1f}   (점 {int(m.sum())}){sp}')
     print(f'    전체                          {np.sqrt(np.mean(r0 ** 2)):6.1f} -> '
           f'{np.sqrt(np.mean(r1 ** 2)):5.1f}')
 
@@ -177,6 +264,7 @@ def main():
         'rotation_vector': [float(v) for v in q],
         'matrix': t_est.tolist(),
         'poses_used': [p['name'] for p in poses],
+        'beam_elev_deg': args.beam_elev_deg,
         'residual_rms_mm': float(np.sqrt(np.mean(r1 ** 2))),
         'std_rot_deg': [float(v) for v in rot_std],
         'std_pos_mm': [float(v) for v in pos_std],

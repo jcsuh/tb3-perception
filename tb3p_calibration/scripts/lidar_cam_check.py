@@ -59,20 +59,24 @@ def tag_corners_board(tag_id, cols, size, spacing):
                      [x0, y0 + size, 0.0], [x0 + size, y0 + size, 0.0]])
 
 
-def board_pose_from_tags(corners, ids, target, k):
-    """
-    검출된 태그 모서리로 카메라 기준 보드 자세를 구한다.
-
-    돌려주는 값: (T_cam_board 4x4, 재투영 오차 RMS px, 사용한 모서리 수)
-    """
+def tag_points(corners, ids, target):
+    """검출된 태그 모서리를 (보드 좌표 3D 점 N x 3, 영상 픽셀 N x 2) 짝으로 펼친다."""
     obj, img = [], []
     for c, i in zip(corners, ids.flatten()):
         if 0 <= i < target['tagCols'] * target['tagRows']:
             obj.append(tag_corners_board(int(i), target['tagCols'],
                                          target['tagSize'], target['tagSpacing']))
             img.append(c.reshape(4, 2))
-    obj = np.concatenate(obj).astype(np.float64)
-    img = np.concatenate(img).astype(np.float64)
+    return np.concatenate(obj).astype(np.float64), np.concatenate(img).astype(np.float64)
+
+
+def board_pose_from_tags(corners, ids, target, k):
+    """
+    검출된 태그 모서리로 카메라 기준 보드 자세를 구한다.
+
+    돌려주는 값: (T_cam_board 4x4, 재투영 오차 RMS px, 사용한 모서리 수)
+    """
+    obj, img = tag_points(corners, ids, target)
     ok, rvec, tvec = cv2.solvePnP(obj, img, k, np.zeros(5), flags=cv2.SOLVEPNP_ITERATIVE)
     if not ok:
         raise RuntimeError('solvePnP 실패')
@@ -82,6 +86,23 @@ def board_pose_from_tags(corners, ids, target, k):
     t[:3, :3] = cv2.Rodrigues(rvec)[0]
     t[:3, 3] = tvec.ravel()
     return t, rms, len(obj)
+
+
+def pose_covariance(corners, ids, target, k, t_cam_board):
+    """
+    PnP로 구한 보드 자세의 공분산 (6 x 6: OpenCV 회전 벡터 rad 3개 + 위치 m 3개).
+
+    재투영 잔차 크기 s와 투영의 야코비안 J로 근사한다: Σ ≈ s² (JᵀJ)⁻¹.
+    태그가 작고(먼 보드) 적을수록 커진다 -> 평면을 덜 믿어야 할 자세를 알 수 있다 (세션 13).
+    """
+    obj, img = tag_points(corners, ids, target)
+    rvec = cv2.Rodrigues(t_cam_board[:3, :3])[0]
+    tvec = t_cam_board[:3, 3].reshape(3, 1)
+    proj, jac = cv2.projectPoints(obj, rvec, tvec, k, np.zeros(5))
+    res = proj.reshape(-1, 2) - img
+    j = jac[:, :6]
+    s2 = float(np.sum(res ** 2) / max(res.size - 6, 1))
+    return s2 * np.linalg.inv(j.T @ j)
 
 
 def plane_from_pose(t_cam_board):

@@ -10,6 +10,8 @@
 
 결과: JSON 하나 (기본 ~/lidar_cam_data/session12.json)와 자세별 흑백 영상(<JSON 이름>_img/pXX.png)
   - poses[]: 자세 이름, 명령한 보드 중심/기울기, 평면 n·d, 보드 위 점(LiDAR 좌표계), 검사값
+    + (세션 13) 보드 자세와 그 공분산(카메라 평면의 불확실성), 보드 위 빔의 각도와
+      스캔 N장의 원래 거리값 (lidar_cam_sweep.py가 노이즈·스캔 수를 바꿔 다시 계산할 때 사용)
   - T_nominal, T_truth: 카메라 <- LiDAR 관계 (초기값과 채점용 정답)
 lidar_cam_calib.py가 이 파일로 최적화와 채점을 한다.
 
@@ -151,8 +153,16 @@ def measure(image, scans, info_k, target):
     board = lcc.board_segment(pts)
     if len(board) < 5:
         return None, f'보드 위 점 {len(board)}개'
+    # 보드에 떨어진 빔 번호 -> 그 빔들의 스캔별 원래 거리값 (평균 전)
+    n_beams = len(s.ranges)
+    ang = np.arctan2(board[:, 1], board[:, 0])
+    beams = np.round((ang - s.angle_min) / s.angle_increment).astype(int) % n_beams
+    raw = np.array([sc.ranges for sc in scans], dtype=np.float64)[:, beams]
+    beam_angles = s.angle_min + beams * s.angle_increment
+    cov = lcc.pose_covariance(corners, ids, target, info_k, t_cam_board)
     return {'tags': n_tags, 'reproj_px': reproj, 'n': n, 'd': d,
-            't_cam_board': t_cam_board, 'points': board}, ''
+            't_cam_board': t_cam_board, 'pose_cov': cov, 'points': board,
+            'beam_angles': beam_angles, 'scan_ranges': raw}, ''
 
 
 def truth_plane(node, cam_frame, t_world_board):
@@ -218,7 +228,10 @@ def main():
         poses.append({'name': name, 'dist': dist, 'side': side, 'yaw_deg': yaw,
                       'tilt_deg': tilt, 'tags': m['tags'], 'reproj_px': m['reproj_px'],
                       'n': m['n'].tolist(), 'd': m['d'], 'points': m['points'].tolist(),
-                      'plane_err_deg': ang, 'plane_err_mm': dd})
+                      'plane_err_deg': ang, 'plane_err_mm': dd,
+                      't_cam_board': m['t_cam_board'].tolist(), 'pose_cov': m['pose_cov'].tolist(),
+                      'beam_angles': m['beam_angles'].tolist(),
+                      'scan_ranges': m['scan_ranges'].tolist()})
 
     # 보드를 원래 자리로 (lidar_cam.sdf와 같은 자세)
     set_board_pose(args.world, args.model, board_world_pose(0.75, 0.0, 15, 0))
