@@ -7,6 +7,8 @@
   - 센서 사양: LiDAR LDS-03, 몸체 IMU ICM-20648 (데이터시트, 2026-10-10 확인)
   - IMU 노이즈: calib_file의 imu_noise (노이즈 밀도) → σ = 밀도 × √rate
   - 스위치: calib_file, sim, truth (+ tb3p_camera_sim.urdf.xacro의 enable_infra)
+  - 바퀴: 모양(반지름, 좌우 위치)은 calib_file의 wheels, Gazebo DiffDrive의 계산 값은 늘 공칭
+    (config/calibration.yaml) → 정답 모델에서는 "실제 바퀴"와 "로봇이 믿는 바퀴"가 다르다 (W7)
 -->
 <robot name="tb3p_burger" xmlns:xacro="http://ros.org/wiki/xacro">
 
@@ -46,11 +48,14 @@
   </link>
 
   <!-- ===== 바퀴 (매크로: 좌우를 한 번에 정의) ===== -->
-  <xacro:macro name="wheel" params="side y mesh">
+  <!-- 반지름과 간격은 calib_file의 wheels. 바퀴 중심 높이 = 반지름 (base_link는 바닥 위 10 mm) -->
+  <xacro:property name="wheels" value="${calib['wheels']}"/>
+  <xacro:macro name="wheel" params="side sign mesh">
+    <xacro:property name="r" value="${wheels['radius_' + side]}"/>
     <joint name="wheel_${side}_joint" type="continuous">
       <parent link="base_link"/>
       <child link="wheel_${side}_link"/>
-      <origin xyz="0 ${y} 0.023" rpy="-1.57 0 0"/>
+      <origin xyz="0 ${sign * wheels['separation'] / 2} ${r - 0.010}" rpy="-1.57 0 0"/>
       <axis xyz="0 0 1"/>
     </joint>
 
@@ -64,7 +69,7 @@
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0"/>
-        <geometry><cylinder length="0.018" radius="0.033"/></geometry>
+        <geometry><cylinder length="0.018" radius="${r}"/></geometry>
       </collision>
       <inertial>
         <origin xyz="0 0 0"/>
@@ -83,8 +88,8 @@
     </gazebo>
   </xacro:macro>
 
-  <xacro:wheel side="left"  y="0.08"  mesh="left_tire.stl"/>
-  <xacro:wheel side="right" y="-0.08" mesh="right_tire.stl"/>
+  <xacro:wheel side="left"  sign="1"  mesh="left_tire.stl"/>
+  <xacro:wheel side="right" sign="-1" mesh="right_tire.stl"/>
 
   <!-- ===== 뒤쪽 캐스터 (URDF는 볼 조인트가 없어 고정 + 마찰 0으로 미끄러지게) ===== -->
   <!-- 바퀴 바닥보다 1 mm 높음 → Gazebo 로봇이 약 0.7° 앞들림 (W7 IMU 정렬 시험 재료로 유지) -->
@@ -187,12 +192,15 @@
   <xacro:include filename="$(find tb3p_description)/urdf/tb3p_truth.urdf.xacro"/>
 
   <!-- ===== Gazebo 플러그인: 바퀴 구동과 바퀴 각도 보고 ===== -->
+  <!-- DiffDrive는 로봇 펌웨어 역할: 명령 -> 바퀴 속도, 바퀴 각도 -> /odom 을 늘 공칭 바퀴 값으로 계산 -->
+  <xacro:property name="nominal_wheels"
+                  value="${xacro.load_yaml('$(find tb3p_description)/config/calibration.yaml')['wheels']}"/>
   <gazebo>
     <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
       <left_joint>wheel_left_joint</left_joint>
       <right_joint>wheel_right_joint</right_joint>
-      <wheel_separation>0.160</wheel_separation>
-      <wheel_radius>0.033</wheel_radius>
+      <wheel_separation>${nominal_wheels['separation']}</wheel_separation>
+      <wheel_radius>${(nominal_wheels['radius_left'] + nominal_wheels['radius_right']) / 2}</wheel_radius>
       <max_linear_acceleration>1.0</max_linear_acceleration>
       <topic>cmd_vel</topic>
       <odom_topic>odom</odom_topic>

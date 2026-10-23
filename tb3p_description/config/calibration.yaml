@@ -29,6 +29,14 @@ sensors:
     rpy: [0.0, 0.0, 0.0]
     time_offset: 0.0
 
+# 바퀴 (W7 UMBmark 추정 결과가 들어감)
+# - radius_left/right: 바퀴 반지름 (m), separation: 두 바퀴 접지점 사이 간격 (m)
+# - 오도메트리: 전진 = (r_R·Δφ_R + r_L·Δφ_L) / 2, 회전 = (r_R·Δφ_R - r_L·Δφ_L) / separation
+wheels:
+  radius_left: 0.033
+  radius_right: 0.033
+  separation: 0.160
+
 # IMU 노이즈 (연속 시간, Kalibr 형식)
 # - Gazebo는 샘플당 표준편차 σ = 노이즈 밀도 × √rate 로 환산해 사용 (xacro가 계산)
 # - 랜덤 워크는 데이터시트에 없음 → 0 (Gazebo 미적용), 실제 단계 R1에서 Allan 분산으로 실측
