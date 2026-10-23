@@ -49,19 +49,24 @@
 
   <!-- ===== 바퀴 (매크로: 좌우를 한 번에 정의) ===== -->
   <!-- 반지름과 간격은 calib_file의 wheels. 바퀴 중심 높이 = 반지름 (base_link는 바닥 위 10 mm) -->
+  <!-- 바퀴 충돌 모양 (세션 16): 공식 모델의 원통(폭 18 mm) 대신 같은 반지름의 구.
+       원통일 때 Gazebo 로봇이 바퀴 사이 가운데가 아니라 오른쪽 약 9 mm(= 폭의 절반) 점을
+       중심으로 돌았다 (정답 위치로 확인). 원통-바닥 접촉이 원통 한쪽 끝 한 점으로 계산되는
+       것으로 보이며, 축 회전을 -1.57에서 정확한 π/2로 바꿔도 그대로였다.
+       구는 접촉점이 늘 바퀴 중심 바로 아래라서 회전 중심이 가운데가 된다 -->
   <xacro:property name="wheels" value="${calib['wheels']}"/>
   <xacro:macro name="wheel" params="side sign mesh">
     <xacro:property name="r" value="${wheels['radius_' + side]}"/>
     <joint name="wheel_${side}_joint" type="continuous">
       <parent link="base_link"/>
       <child link="wheel_${side}_link"/>
-      <origin xyz="0 ${sign * wheels['separation'] / 2} ${r - 0.010}" rpy="-1.57 0 0"/>
+      <origin xyz="0 ${sign * wheels['separation'] / 2} ${r - 0.010}" rpy="${-pi / 2} 0 0"/>
       <axis xyz="0 0 1"/>
     </joint>
 
     <link name="wheel_${side}_link">
       <visual>
-        <origin xyz="0 0 0" rpy="1.57 0 0"/>
+        <origin xyz="0 0 0" rpy="${pi / 2} 0 0"/>
         <geometry>
           <mesh filename="package://turtlebot3_description/meshes/wheels/${mesh}" scale="0.001 0.001 0.001"/>
         </geometry>
@@ -69,7 +74,7 @@
       </visual>
       <collision>
         <origin xyz="0 0 0" rpy="0 0 0"/>
-        <geometry><cylinder length="0.018" radius="${r}"/></geometry>
+        <geometry><sphere radius="${r}"/></geometry>
       </collision>
       <inertial>
         <origin xyz="0 0 0"/>
