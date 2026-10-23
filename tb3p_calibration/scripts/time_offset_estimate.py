@@ -32,8 +32,8 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize_scalar
 import scan_match as sm
+from scipy.optimize import minimize_scalar
 import wheel_odom as wo
 import yaml
 
