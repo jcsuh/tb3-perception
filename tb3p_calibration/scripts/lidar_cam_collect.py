@@ -13,6 +13,7 @@
     + (세션 13) 보드 자세와 그 공분산(카메라 평면의 불확실성), 보드 위 빔의 각도와
       스캔 N장의 원래 거리값 (lidar_cam_sweep.py가 노이즈·스캔 수를 바꿔 다시 계산할 때 사용)
   - T_nominal, T_truth: 카메라 <- LiDAR 관계 (초기값과 채점용 정답)
+  - (세션 14) K, D, image_size: 카메라 내부 파라미터 (lidar_cam_overlay.py가 영상에 점을 그릴 때)
 lidar_cam_calib.py가 이 파일로 최적화와 채점을 한다.
 
 사용 예 (sim.launch.py world:=lidar_cam 실행 중):
@@ -198,6 +199,8 @@ def main():
     if not spin_until(node, lambda: not node.missing(args.cam_frame), 20.0):
         raise SystemExit(f'메시지를 못 받음: {node.missing(args.cam_frame)}')
     k = np.array(node.info.k, dtype=np.float64).reshape(3, 3)
+    info = {'K': k.tolist(), 'D': [float(v) for v in node.info.d],
+            'image_size': [int(node.info.width), int(node.info.height)]}
     t_nom = lcc.relative(lcc.frame_poses(node.nominal), args.cam_frame, 'base_scan')
     t_true = lcc.relative(lcc.frame_poses(node.truth), args.cam_frame, 'base_scan')
 
@@ -240,7 +243,7 @@ def main():
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     data = {'cam_frame': args.cam_frame, 'lidar_frame': 'base_scan', 'scans_per_pose': args.scans,
-            'T_nominal': t_nom.tolist(), 'T_truth': t_true.tolist(), 'poses': poses}
+            'T_nominal': t_nom.tolist(), 'T_truth': t_true.tolist(), **info, 'poses': poses}
     with open(args.out, 'w') as f:
         json.dump(data, f, indent=1)
     print(f'{len(poses)}/{len(POSES)} 자세 저장: {args.out}  (영상: {img_dir})')

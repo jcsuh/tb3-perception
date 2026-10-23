@@ -29,10 +29,18 @@ LiDAR 빔 높이각 (--beam-elev-deg, 세션 13)
   python3 lidar_cam_calib.py ~/lidar_cam_data/session12.json
   python3 lidar_cam_calib.py ~/lidar_cam_data/session12.json --only-upright   # 실험: 똑바로 선 자세만
   python3 lidar_cam_calib.py ~/lidar_cam_data/session13.json --weighted
+
+C++(Ceres)와 비교 (--export-problem, 세션 14)
+  풀기 직전의 문제(점, 평면, 공칭·정답, 가중치)와 이 스크립트의 답을 YAML로 저장한다.
+  같은 파일을 C++ 프로그램 lidar_cam_calib_ceres가 읽어 Ceres로 다시 풀고 두 답을 비교한다.
+    python3 lidar_cam_calib.py ~/lidar_cam_data/session13.json --beam-elev-deg -0.444
+        --export-problem ~/lidar_cam_data/session13_problem.yaml     (실제로는 위와 한 줄로)
+    ros2 run tb3p_calibration lidar_cam_calib_ceres ~/lidar_cam_data/session13_problem.yaml
 """
 import argparse
 import json
 import os
+import time
 
 import cv2
 import numpy as np
@@ -180,6 +188,38 @@ def axis_name(v):
     return ', '.join(f'{names[i]} {v[i]:+.2f}' for i in order[:2])
 
 
+def export_problem(path, data, poses, weights, elev_deg, result, nfev, solve_ms):
+    """
+    C++(Ceres) 프로그램이 같은 문제를 풀 수 있게 문제와 이 스크립트의 답을 YAML로 저장한다.
+
+    점은 빔 높이각을 이미 적용한 3D 위치(LiDAR 좌표계, m)다. 가중치는 --weighted일 때만 넣는다.
+    reference_python은 비교용일 뿐 C++ 풀이에는 쓰지 않는다.
+    """
+    out = {
+        'cam_frame': data['cam_frame'], 'lidar_frame': data['lidar_frame'],
+        'beam_elev_deg': float(elev_deg), 'weighted': weights is not None,
+        'pass_rot_deg': PASS_ROT_DEG, 'pass_pos_mm': PASS_POS_MM,
+        'T_nominal': np.asarray(data['T_nominal'], dtype=float).tolist(),
+        'T_truth': np.asarray(data['T_truth'], dtype=float).tolist(),
+        'poses': [],
+        'reference_python': {
+            'solver': 'scipy.optimize.least_squares (lm, numeric jacobian)',
+            'matrix': result['matrix'], 'residual_rms_mm': result['residual_rms_mm'],
+            'std_rot_deg': result['std_rot_deg'], 'std_pos_mm': result['std_pos_mm'],
+            'error_vs_truth': result['error_vs_truth'],
+            'nfev': int(nfev), 'solve_ms': float(solve_ms),
+        },
+    }
+    for i, p in enumerate(poses):
+        item = {'name': p['name'], 'n': [float(v) for v in p['n']], 'd': float(p['d']),
+                'points': np.asarray(p['points'], dtype=float).round(9).tolist()}
+        if weights is not None:
+            item['weights'] = [float(w) for w in weights[i]]
+        out['poses'].append(item)
+    with open(path, 'w') as f:
+        yaml.safe_dump(out, f, sort_keys=False, default_flow_style=None, width=1000)
+
+
 def main():
     """명령줄에서 실행할 때의 시작점."""
     ap = argparse.ArgumentParser(description=__doc__,
@@ -195,6 +235,8 @@ def main():
     ap.add_argument('--beam-elev-deg', type=float, default=0.0,
                     help='LiDAR 빔 높이각 (°, 아래가 -). Gazebo GPU LiDAR는 약 -0.44')
     ap.add_argument('--out', default='', help='결과 YAML (기본: 입력 옆 *_result.yaml)')
+    ap.add_argument('--export-problem', default='',
+                    help='C++(Ceres) 비교용: 문제와 이 스크립트의 답을 이 YAML에 저장')
     args = ap.parse_args()
 
     with open(args.data) as f:
@@ -216,7 +258,9 @@ def main():
     if args.weighted:
         sigma_l = (args.sigma_lidar or 10.0 / np.sqrt(data.get('scans_per_pose', 1))) / 1000
         weights, sig_plane = point_weights(poses, t_nom, sigma_l)
+    start = time.perf_counter()
     t_est, sol, (pts, ns, ds, idx, _) = calibrate(poses, t_nom, weights)
+    solve_ms = (time.perf_counter() - start) * 1000
     r0 = residuals(np.zeros(6), t_nom, pts, ns, ds) * 1000
     r1 = residuals(sol.x, t_nom, pts, ns, ds) * 1000
     rot_std, pos_std, eigval, weakest = uncertainty(sol, len(pts))
@@ -226,7 +270,7 @@ def main():
         note += f'  (가중치: σ_LiDAR {sigma_l * 1000:.1f} mm + 자세별 σ_평면)'
     if args.beam_elev_deg:
         note += f'  (빔 높이각 {args.beam_elev_deg:+.3f}°)'
-    print(f'자세 {len(poses)}개, 점 {len(pts)}개, 반복 {sol.nfev}회{note}')
+    print(f'자세 {len(poses)}개, 점 {len(pts)}개, 잔차 계산 {sol.nfev}회, {solve_ms:.1f} ms{note}')
     print('[자세별 잔차 RMS, mm]  추정 전(공칭) -> 추정 후')
     for i, p in enumerate(poses):
         m = idx == i
@@ -273,6 +317,11 @@ def main():
     with open(out, 'w') as f:
         yaml.safe_dump(result, f, sort_keys=False, allow_unicode=True)
     print(f'saved {out}')
+    if args.export_problem:
+        export_problem(args.export_problem, data, poses, weights, args.beam_elev_deg, result,
+                       sol.nfev, solve_ms)
+        print(f'saved {args.export_problem}  (C++: ros2 run tb3p_calibration '
+              f'lidar_cam_calib_ceres {args.export_problem})')
 
 
 if __name__ == '__main__':

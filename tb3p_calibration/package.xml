@@ -9,6 +9,11 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <!-- src/: LiDAR-카메라 캘리브레이션 C++ 풀이 (lidar_cam_calib_ceres) -->
+  <depend>libceres-dev</depend>
+  <depend>eigen</depend>
+  <depend>yaml-cpp</depend>
+
   <!-- scripts/: LiDAR-카메라 캘리브레이션 (lidar_cam_*.py) -->
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
