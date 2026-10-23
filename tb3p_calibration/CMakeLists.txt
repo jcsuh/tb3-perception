@@ -15,6 +15,9 @@ find_package(ament_cmake REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
 # LiDAR-camera point-to-plane solver in C++ (Ceres), same problem as
 # scripts/lidar_cam_calib.py (session 14)
@@ -23,6 +26,17 @@ target_compile_features(lidar_cam_calib_ceres PRIVATE cxx_std_17)
 target_link_libraries(lidar_cam_calib_ceres
   Ceres::ceres Eigen3::Eigen yaml-cpp::yaml-cpp)
 install(TARGETS lidar_cam_calib_ceres DESTINATION lib/${PROJECT_NAME})
+
+# Online time offset estimation between IMU, wheels and LiDAR (session 19),
+# same method as scripts/time_offset_estimate.py
+add_executable(time_offset_node src/time_offset_node.cpp)
+target_compile_features(time_offset_node PRIVATE cxx_std_17)
+target_link_libraries(time_offset_node
+  Eigen3::Eigen
+  rclcpp::rclcpp
+  ${sensor_msgs_TARGETS}
+  ${std_msgs_TARGETS})
+install(TARGETS time_offset_node DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -34,6 +48,11 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_time_offset test/test_time_offset.cpp)
+  target_include_directories(test_time_offset PRIVATE src)
+  target_link_libraries(test_time_offset Eigen3::Eigen)
 endif()
 
 ament_package()

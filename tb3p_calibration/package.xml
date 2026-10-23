@@ -13,6 +13,10 @@
   <depend>libceres-dev</depend>
   <depend>eigen</depend>
   <depend>yaml-cpp</depend>
+  <!-- src/: 시간 오프셋 실시간 추정 노드 (time_offset_node) -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
 
   <!-- scripts/: LiDAR-카메라 캘리브레이션 (lidar_cam_*.py) -->
   <exec_depend>python3-numpy</exec_depend>
@@ -20,6 +24,7 @@
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 
+  <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
