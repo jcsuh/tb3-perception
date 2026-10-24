@@ -73,6 +73,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_drift_core test/test_drift_core.cpp)
   target_include_directories(test_drift_core PRIVATE src)
   target_link_libraries(test_drift_core Eigen3::Eigen)
+
+  # Python scripts (session 23): calibration merge math and URDF check
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_calib_merge test/test_calib_merge.py)
 endif()
 
 ament_package()

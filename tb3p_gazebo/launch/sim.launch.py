@@ -7,6 +7,8 @@ Gazebo에 tb3p 설계도로 로봇을 띄운다.
          umbmark (빈 바닥, 바퀴 캘리브레이션 UMBmark 주행용)
 - enable_infra: true면 D435i IR 카메라 2개를 켠다 (Kalibr용, 시뮬레이션이 느려짐)
 - x_pose, y_pose: 로봇 스폰 위치 (비우면 월드별 기본값)
+- calib_file: 로봇이 믿는 캘리브레이션 (기본: 공칭 calibration.yaml).
+  calib_merge.py가 만든 추정값을 주면 /tf가 추정값으로 바뀐다. Gazebo 속 로봇(정답)은 그대로
 
 1) Gazebo 실행
 2) 공칭 설계도 -> /tf (로봇이 믿는 위치, calibration.yaml)
@@ -74,6 +76,7 @@ def generate_launch_description():
     bridge_config = os.path.join(tb3p_gazebo, 'config', 'bridge.yaml')
     xacro_file = os.path.join(tb3p_description, 'urdf', 'tb3p_burger.urdf.xacro')
     truth_calib = os.path.join(tb3p_gazebo, 'config', 'sim_truth.yaml')
+    nominal_calib = os.path.join(tb3p_description, 'config', 'calibration.yaml')
 
     truth_description = ParameterValue(
         Command(['xacro ', xacro_file, ' calib_file:=', truth_calib,
@@ -89,6 +92,8 @@ def generate_launch_description():
                               description='스폰 x (비우면 월드 기본값)'),
         DeclareLaunchArgument('y_pose', default_value='',
                               description='스폰 y (비우면 월드 기본값)'),
+        DeclareLaunchArgument('calib_file', default_value=nominal_calib,
+                              description='로봇이 믿는 캘리브레이션 YAML (추정값으로 바꿀 수 있음)'),
 
         # Gazebo가 모델(model://)과 로봇·카메라 메시(package://)를 찾을 위치
         AppendEnvironmentVariable('GZ_SIM_RESOURCE_PATH', os.path.join(tb3_gazebo, 'models')),
@@ -103,7 +108,8 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(tb3p_description, 'launch', 'description.launch.py')),
-            launch_arguments={'use_sim_time': 'true', 'sim': 'true'}.items(),
+            launch_arguments={'use_sim_time': 'true', 'sim': 'true',
+                              'calib_file': LaunchConfiguration('calib_file')}.items(),
         ),
 
         # 3) 정답 설계도 → /truth/... (Gazebo 스폰과 채점 전용, 로봇 /tf와 섞이지 않게)
