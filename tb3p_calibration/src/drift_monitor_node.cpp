@@ -4,7 +4,8 @@
 //
 // 검사 1 (카메라-LiDAR): LiDAR 점을 깊이 영상에 투영해 카메라가 마운트 축 둘레로 돈 각도를 추정
 //   (drift_core.hpp, scripts/drift_check.py와 같은 방법). 영상 batch장마다 한 번 판단.
-//   스캔과 영상 사이 로봇이 돈 만큼은 자이로로 되돌린다.
+//   스캔과 영상 사이 로봇이 돈 만큼은 자이로로, 앞으로 간 만큼은 바퀴로 되돌린다.
+//   로봇이 거의 서 있는 묶음은 건너뛴다 (한 장면만 보면 그 장면의 치우침이 결과가 됨).
 // 검사 2 (회전 일관성): 자이로·바퀴·LiDAR 스캔 매칭이 잰 회전의 배율 (센서 회전 / IMU 회전)
 // 검사 3 (시간 오프셋): 바퀴·LiDAR의 IMU 기준 시간 오프셋 (time_offset_core.hpp)
 //   검사 2·3은 period_s초마다 최근 window_s초로 계산 (회전 변화가 부족하면 STALE)
@@ -91,18 +92,18 @@ public:
     j_yaw_(declare_parameter<double>("cam_warn_deg", 0.5),
       declare_parameter<double>("cam_error_deg", 1.0),
       declare_parameter<double>("k_sigma", 6.0),
-      static_cast<int>(declare_parameter<int>("cam_learn_batches", 5)),
+      static_cast<int>(declare_parameter<int>("cam_learn_batches", 8)),
       static_cast<int>(declare_parameter<int>("persist", 2))),
-    j_scale_w_(0.02, 0.05, get_parameter("k_sigma").as_double(), 3,
-      static_cast<int>(get_parameter("persist").as_int())),
-    j_scale_l_(0.02, 0.05, get_parameter("k_sigma").as_double(), 3,
-      static_cast<int>(get_parameter("persist").as_int())),
+    j_scale_w_(declare_parameter<double>("scale_warn", 0.02),
+      declare_parameter<double>("scale_error", 0.05), dparam("k_sigma"),
+      static_cast<int>(declare_parameter<int>("rot_learn_evals", 8)), iparam("persist")),
+    j_scale_l_(dparam("scale_warn"), dparam("scale_error"), dparam("k_sigma"),
+      iparam("rot_learn_evals"), iparam("persist")),
     j_off_w_(declare_parameter<double>("offset_warn_ms", 5.0),
-      declare_parameter<double>("offset_error_ms", 10.0), get_parameter("k_sigma").as_double(),
-      3, static_cast<int>(get_parameter("persist").as_int())),
-    j_off_l_(get_parameter("offset_warn_ms").as_double(),
-      get_parameter("offset_error_ms").as_double(), get_parameter("k_sigma").as_double(), 3,
-      static_cast<int>(get_parameter("persist").as_int()))
+      declare_parameter<double>("offset_error_ms", 10.0), dparam("k_sigma"),
+      iparam("rot_learn_evals"), iparam("persist")),
+    j_off_l_(dparam("offset_warn_ms"), dparam("offset_error_ms"), dparam("k_sigma"),
+      iparam("rot_learn_evals"), iparam("persist"))
   {
     const auto calib_file = declare_parameter<std::string>("calib_file", "");
     depth_topic_ = declare_parameter<std::string>(
@@ -118,6 +119,11 @@ public:
     window_ = declare_parameter<double>("window_s", 20.0);
     period_ = declare_parameter<double>("period_s", 5.0);
     min_rate_std_ = declare_parameter<double>("min_rate_std", 0.2);
+    // 검사 1 묶음은 로봇이 이만큼 돌았거나 움직였을 때만 쓴다 (서 있으면 건너뜀)
+    min_turn_ = declare_parameter<double>("cam_min_turn_deg", 5.0) / kDeg;
+    min_move_ = declare_parameter<double>("cam_min_move_m", 0.10);
+    // 검사 3이 LiDAR 시각이 기준에서 벗어났다고 추정하면 그만큼 검사 1의 스캔 시각을 고쳐 쓴다
+    use_lidar_offset_ = declare_parameter<bool>("cam_use_lidar_offset", true);
     // 기준을 직접 줄 때 (NaN이면 처음 몇 번으로 배운다)
     const double base_yaw = declare_parameter<double>("cam_baseline_deg", std::nan(""));
     const double base_yaw_std = declare_parameter<double>("cam_baseline_std_deg", 0.0);
@@ -188,6 +194,12 @@ public:
   }
 
 private:
+  double dparam(const std::string & name) const {return get_parameter(name).as_double();}
+  int iparam(const std::string & name) const
+  {
+    return static_cast<int>(get_parameter(name).as_int());
+  }
+
   // ===== TF (공칭, /tf_static) =====
   bool pose_of(const std::string & frame, Iso & out, int depth = 0) const
   {
@@ -275,11 +287,13 @@ private:
     raw_l_ = m.position[i];
     raw_r_ = m.position[j];
     have_joint_ = true;
+    dist_ = 0.5 * (radius_left_ * phi_l_ + radius_right_ * phi_r_);
     if (t - last_joint_t_ < 0.005) {
       return;
     }
     last_joint_t_ = t;
     wheel_.push(t, (radius_right_ * phi_r_ - radius_left_ * phi_l_) / separation_);
+    dist_s_.push(t, dist_);
   }
 
   void on_scan(const sensor_msgs::msg::LaserScan & m)
@@ -332,12 +346,13 @@ private:
         }
       }
     }
-    // 시각이 가장 가까운 스캔
+    // 시각이 가장 가까운 스캔 (LiDAR 시각 보정 반영)
+    const double c = lidar_corr_;
     const auto best = std::min_element(
-      scans_.begin(), scans_.end(), [t](const auto & a, const auto & b) {
-        return std::abs(a.first - t) < std::abs(b.first - t);
+      scans_.begin(), scans_.end(), [t, c](const auto & a, const auto & b) {
+        return std::abs(a.first + c - t) < std::abs(b.first + c - t);
       });
-    pending_.push_back({t, best->first, best->second, std::move(img)});
+    pending_.push_back({t, best->first + c, best->second, std::move(img)});
     last_cap_ = t;
     process_pending();
   }
@@ -350,17 +365,34 @@ private:
     {
       Pending p = std::move(pending_.front());
       pending_.pop_front();
+      // 스캔 시각 -> 영상 시각 사이 로봇 움직임: 앞으로 ds 가고 dpsi 돌았다
+      //   영상 시각의 base 좌표 = Rz(-dpsi) · (스캔 시각 base 좌표 - (ds, 0, 0))
       const double dpsi = to::interp(imu_, p.t_img) - to::interp(imu_, p.t_scan);
+      const double ds = to::interp(dist_s_, p.t_img) - to::interp(dist_s_, p.t_scan);
       Iso comp = Iso::Identity();
       comp.rotate(Eigen::AngleAxisd(-dpsi, Eigen::Vector3d::UnitZ()));
+      comp.translate(Eigen::Vector3d(-ds, 0.0, 0.0));
       dr::Frame f;
       f.pts_base = dr::transform(
         comp * t_base_lidar_, dr::lidar_points(p.ranges, angle_min_, angle_inc_, elev_deg_));
       f.depth = std::move(p.depth);
       frames_.push_back(std::move(f));
+      batch_yaw_.push_back(to::interp(imu_, p.t_img));
+      batch_dist_.push_back(dist_);
       if (static_cast<int>(frames_.size()) >= batch_) {
-        evaluate_camera();
+        if (dr::view_changed(batch_yaw_, batch_dist_, min_turn_, min_move_)) {
+          evaluate_camera();
+          still_ = false;
+        } else {
+          ++skipped_still_;
+          if (!still_) {
+            RCLCPP_INFO(get_logger(), "검사 1: 로봇이 거의 움직이지 않아 묶음을 건너뜀 (움직이면 다시 시작)");
+          }
+          still_ = true;
+        }
         frames_.clear();
+        batch_yaw_.clear();
+        batch_dist_.clear();
       }
     }
     while (pending_.size() > 10) {
@@ -400,6 +432,7 @@ private:
   {
     imu_.trim_before(now - window_ - 0.6);
     wheel_.trim_before(now - window_ - 0.3);
+    dist_s_.trim_before(now - window_ - 0.3);
     lidar_.trim_before(now - window_ - 0.3);
     while (!rates_.empty() && rates_.front().first < now - window_) {
       rates_.pop_front();
@@ -425,8 +458,13 @@ private:
     scale_l_ = rl.scale;
     off_w_ = rw.offset * 1000;
     off_l_ = rl.offset * 1000;
+    ++rot_evals_;
     const Level l2 = worst(j_scale_w_.update(scale_w_), j_scale_l_.update(scale_l_));
     const Level l3 = worst(j_off_w_.update(off_w_), j_off_l_.update(off_l_));
+    // 검사 3 약속: 오프셋 = 센서 시각에 더해야 맞는 값. 기준에서 벗어난 만큼만 스캔 시각에 더한다
+    //   (예: LiDAR 시각이 50 ms 늦게 찍히면 오프셋이 기준보다 약 -50 ms -> 스캔 시각 - 50 ms)
+    lidar_corr_ = use_lidar_offset_ && j_off_l_.learned() ?
+      (off_l_ - j_off_l_.mean()) / 1000.0 : 0.0;
     set_level(rot_level_, l2, "검사 2 회전 일관성",
       "배율 바퀴 " + fmt(scale_w_, "%.4f") + ", LiDAR " + fmt(scale_l_, "%.4f"));
     set_level(time_level_, l3, "검사 3 시간 오프셋",
@@ -481,20 +519,23 @@ private:
           {"warn_deg", fmt(j_yaw_.warn())}, {"error_deg", fmt(j_yaw_.error())},
           {"residual_mm_at_zero", fmt(cost_zero_ * 1000, "%.1f")},
           {"residual_mm_at_best", fmt(cost_best_ * 1000, "%.1f")},
-          {"batches", std::to_string(cam_batches_)}}));
+          {"batches", std::to_string(cam_batches_)},
+          {"skipped_still", std::to_string(skipped_still_)},
+          {"lidar_time_correction_ms", fmt(lidar_corr_ * 1000, "%.2f")}}));
     arr.status.push_back(status(
         "yaw_rate_consistency", rot_level_, "scale wheel " + fmt(scale_w_, "%.4f") +
         ", lidar " + fmt(scale_l_, "%.4f"),
         {{"wheel_scale", fmt(scale_w_, "%.5f")}, {"lidar_scale", fmt(scale_l_, "%.5f")},
           {"wheel_scale_baseline", fmt(j_scale_w_.mean(), "%.5f")},
           {"lidar_scale_baseline", fmt(j_scale_l_.mean(), "%.5f")},
-          {"rate_std", fmt(rate_std_)}}));
+          {"rate_std", fmt(rate_std_)}, {"evaluations", std::to_string(rot_evals_)}}));
     arr.status.push_back(status(
         "time_offset", time_level_, "wheel " + fmt(off_w_, "%+.1f") + " ms, lidar " +
         fmt(off_l_, "%+.1f") + " ms",
         {{"wheel_offset_ms", fmt(off_w_, "%.2f")}, {"lidar_offset_ms", fmt(off_l_, "%.2f")},
           {"wheel_offset_baseline_ms", fmt(j_off_w_.mean(), "%.2f")},
-          {"lidar_offset_baseline_ms", fmt(j_off_l_.mean(), "%.2f")}}));
+          {"lidar_offset_baseline_ms", fmt(j_off_l_.mean(), "%.2f")},
+          {"evaluations", std::to_string(rot_evals_)}}));
     diag_pub_->publish(arr);
   }
 
@@ -510,6 +551,9 @@ private:
   std::string depth_topic_;
   double radius_left_ = 0.033, radius_right_ = 0.033, separation_ = 0.160;
   double rate_ = 2.0, window_ = 20.0, period_ = 5.0, min_rate_std_ = 0.2;
+  double min_turn_ = 0.0873, min_move_ = 0.10;
+  bool use_lidar_offset_ = true;
+  double lidar_corr_ = 0.0;     // 검사 1 스캔 시각에 더할 값 (s)
   int batch_ = 6;
   Iso t_color_lidar_ = Iso::Identity();
   double elev_deg_ = 0.0;
@@ -526,21 +570,24 @@ private:
   dr::Intrinsics k_;
 
   // 센서 기록
-  to::Series imu_, wheel_, lidar_;
+  to::Series imu_, wheel_, lidar_, dist_s_;     // dist_s_: 바퀴 이동 거리 (m)
   std::deque<std::pair<double, double>> rates_;
   std::deque<std::pair<double, std::vector<float>>> scans_;
   std::deque<Pending> pending_;
   std::vector<dr::Frame> frames_;
+  std::vector<double> batch_yaw_, batch_dist_;     // 묶음 프레임들의 누적 yaw (rad), 이동 거리 (m)
+  bool still_ = false;
+  int skipped_still_ = 0;
   bool have_imu_ = false, have_joint_ = false;
   double last_imu_t_ = 0.0, last_w_ = 0.0, imu_theta_ = 0.0;
-  double raw_l_ = 0.0, raw_r_ = 0.0, phi_l_ = 0.0, phi_r_ = 0.0, last_joint_t_ = -1.0;
+  double raw_l_ = 0.0, raw_r_ = 0.0, phi_l_ = 0.0, phi_r_ = 0.0, last_joint_t_ = -1.0, dist_ = 0.0;
   double angle_min_ = 0.0, angle_inc_ = 0.0, lidar_theta_ = 0.0;
   double last_cap_ = -1e9, next_eval_ = 0.0;
 
   // 최근 값
   double yaw_deg_ = 0.0, cost_zero_ = 0.0, cost_best_ = 0.0;
   double scale_w_ = 0.0, scale_l_ = 0.0, off_w_ = 0.0, off_l_ = 0.0, rate_std_ = 0.0;
-  int cam_batches_ = 0;
+  int cam_batches_ = 0, rot_evals_ = 0;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;

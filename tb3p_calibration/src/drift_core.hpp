@@ -190,6 +190,22 @@ inline YawEstimate estimate_yaw(
   return est;
 }
 
+// 묶음 안에서 로봇이 충분히 움직였나: 돈 각도의 범위 >= min_turn (rad) 또는 이동 거리의 범위 >= min_move (m).
+// 제자리에 서 있으면 한 장면만 보게 되어 그 장면 특유의 치우침이 그대로 결과가 된다 (세션 21 결과)
+inline bool view_changed(
+  const std::vector<double> & yaw, const std::vector<double> & dist, double min_turn,
+  double min_move)
+{
+  const auto span = [](const std::vector<double> & v) {
+      if (v.empty()) {
+        return 0.0;
+      }
+      const auto mm = std::minmax_element(v.begin(), v.end());
+      return *mm.second - *mm.first;
+    };
+  return span(yaw) >= min_turn || span(dist) >= min_move;
+}
+
 // ===== 판정 =====
 
 enum class Level {OK = 0, WARN = 1, ERROR = 2, STALE = 3};
@@ -204,8 +220,26 @@ inline const char * level_name(Level l)
   }
 }
 
+// 가운데 값 (중앙값)
+inline double median(std::vector<double> v)
+{
+  if (v.empty()) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const std::size_t n = v.size() / 2;
+  std::nth_element(v.begin(), v.begin() + n, v.end());
+  const double hi = v[n];
+  if (v.size() % 2 == 1) {
+    return hi;
+  }
+  return 0.5 * (hi + *std::max_element(v.begin(), v.begin() + n));
+}
+
 // 기준값 학습 + 임계값 판정.
-// 처음 learn_n개 값으로 기준(평균, 표준편차)을 배우고, 그 뒤에는 |값 - 기준| 으로 판정:
+// 처음 learn_n개 값으로 기준을 배운다: 중심 = 중앙값, 퍼짐 = 1.4826 × 중앙값 절대 편차 (MAD).
+//   평균·표준편차 대신 쓰는 이유: 학습 중 튀는 값 하나가 기준을 끌고 가지 않게 (세션 22 결과)
+//   1.4826을 곱하면 정규분포에서 표준편차와 같은 크기가 된다.
+// 그 뒤에는 |값 - 기준| 으로 판정:
 //   >= error가 persist번 연속이면 ERROR, >= warn이면 WARN (ERROR 연속 조건을 아직 못 채운 경우 포함)
 // error·warn은 "최소 고정값"과 "기준 표준편차 × k" 중 큰 쪽 (정상 상태가 시끄러우면 기준이 넓어진다)
 class Judge
@@ -234,16 +268,12 @@ public:
     if (!learned_) {
       samples_.push_back(value);
       if (static_cast<int>(samples_.size()) >= learn_n_) {
-        double m = 0.0;
+        const double m = median(samples_);
+        std::vector<double> dev;
         for (double x : samples_) {
-          m += x;
+          dev.push_back(std::abs(x - m));
         }
-        m /= samples_.size();
-        double v = 0.0;
-        for (double x : samples_) {
-          v += (x - m) * (x - m);
-        }
-        set_baseline(m, std::sqrt(v / std::max<std::size_t>(1, samples_.size() - 1)));
+        set_baseline(m, 1.4826 * median(dev));
       }
       return Level::STALE;    // 배우는 중
     }

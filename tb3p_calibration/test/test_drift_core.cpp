@@ -206,6 +206,20 @@ TEST(DriftCore, NoPointsGivesNotOk)
   EXPECT_FALSE(est.ok);
 }
 
+TEST(DriftCore, ViewChangedNeedsTurnOrMove)
+{
+  const double turn = 5.0 * kDegToRad, move = 0.10;
+  // 서 있음: 자이로 잡음 정도만
+  EXPECT_FALSE(dr::view_changed({0.0, 0.001, -0.001, 0.0}, {1.0, 1.0, 1.0, 1.0}, turn, move));
+  // 제자리 회전 0.3 rad/s × 2.5 s
+  EXPECT_TRUE(dr::view_changed({0.0, 0.15, 0.3, 0.45, 0.6, 0.75}, {1.0, 1.0, 1.0}, turn, move));
+  // 왼쪽으로 돌다 오른쪽으로 (범위로 보므로 처음과 끝이 같아도 움직인 것)
+  EXPECT_TRUE(dr::view_changed({0.0, 0.2, 0.0}, {0.0, 0.0, 0.0}, turn, move));
+  // 직진 0.1 m/s × 2.5 s
+  EXPECT_TRUE(dr::view_changed({0.0, 0.0}, {2.00, 2.05, 2.10, 2.15, 2.20, 2.25}, turn, move));
+  EXPECT_FALSE(dr::view_changed({}, {}, turn, move));
+}
+
 TEST(Judge, LearnsBaselineThenJudges)
 {
   dr::Judge j(0.5, 1.0, 6.0, 3, 2);
@@ -215,8 +229,8 @@ TEST(Judge, LearnsBaselineThenJudges)
   EXPECT_EQ(j.update(0.08), dr::Level::STALE);
   ASSERT_TRUE(j.learned());
   EXPECT_NEAR(j.mean(), 0.10, 1e-12);
-  EXPECT_NEAR(j.std_dev(), 0.02, 1e-12);
-  EXPECT_DOUBLE_EQ(j.warn(), 0.5);     // 6 × 0.02 × 0.5 = 0.06 < 0.5
+  EXPECT_NEAR(j.std_dev(), 1.4826 * 0.02, 1e-12);   // 중앙값 절대 편차 0.02
+  EXPECT_DOUBLE_EQ(j.warn(), 0.5);     // 6 × 0.03 × 0.5 = 0.09 < 0.5
   EXPECT_DOUBLE_EQ(j.error(), 1.0);
 
   EXPECT_EQ(j.update(0.30), dr::Level::OK);
@@ -229,6 +243,21 @@ TEST(Judge, LearnsBaselineThenJudges)
   // 한 번 정상으로 돌아오면 연속 횟수는 처음부터
   EXPECT_EQ(j.update(0.10), dr::Level::OK);
   EXPECT_EQ(j.update(1.20), dr::Level::WARN);
+}
+
+TEST(Judge, MedianIgnoresOneOutlierWhileLearning)
+{
+  EXPECT_DOUBLE_EQ(dr::median({3.0, 1.0, 2.0}), 2.0);
+  EXPECT_DOUBLE_EQ(dr::median({4.0, 1.0, 3.0, 2.0}), 2.5);
+  // 학습 중 하나가 튀어도 (단계가 바뀌는 묶음 등) 기준과 퍼짐은 거의 그대로
+  dr::Judge j(0.5, 1.0, 6.0, 5, 2);
+  for (double v : {-0.10, -0.12, 0.90, -0.08, -0.11}) {
+    j.update(v);
+  }
+  ASSERT_TRUE(j.learned());
+  EXPECT_NEAR(j.mean(), -0.10, 1e-12);
+  EXPECT_LT(j.std_dev(), 0.05);
+  EXPECT_DOUBLE_EQ(j.error(), 1.0);
 }
 
 TEST(Judge, NoisyBaselineWidensThresholds)
