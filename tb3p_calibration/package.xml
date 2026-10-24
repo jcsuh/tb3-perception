@@ -17,6 +17,9 @@
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <!-- src/: 드리프트 모니터 노드 (drift_monitor_node) -->
+  <depend>diagnostic_msgs</depend>
+  <depend>tf2_msgs</depend>
 
   <!-- scripts/: LiDAR-카메라 캘리브레이션 (lidar_cam_*.py) -->
   <exec_depend>python3-numpy</exec_depend>

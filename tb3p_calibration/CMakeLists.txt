@@ -18,6 +18,8 @@ find_package(yaml-cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
+find_package(tf2_msgs REQUIRED)
 
 # LiDAR-camera point-to-plane solver in C++ (Ceres), same problem as
 # scripts/lidar_cam_calib.py (session 14)
@@ -38,6 +40,20 @@ target_link_libraries(time_offset_node
   ${std_msgs_TARGETS})
 install(TARGETS time_offset_node DESTINATION lib/${PROJECT_NAME})
 
+# Online calibration drift monitor (session 21): camera-LiDAR yaw from depth
+# images (scripts/drift_check.py), yaw-rate consistency and time offsets,
+# reported on /diagnostics
+add_executable(drift_monitor_node src/drift_monitor_node.cpp)
+target_compile_features(drift_monitor_node PRIVATE cxx_std_17)
+target_link_libraries(drift_monitor_node
+  Eigen3::Eigen
+  yaml-cpp::yaml-cpp
+  rclcpp::rclcpp
+  ${sensor_msgs_TARGETS}
+  ${diagnostic_msgs_TARGETS}
+  ${tf2_msgs_TARGETS})
+install(TARGETS drift_monitor_node DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
@@ -53,6 +69,10 @@ if(BUILD_TESTING)
   ament_add_gtest(test_time_offset test/test_time_offset.cpp)
   target_include_directories(test_time_offset PRIVATE src)
   target_link_libraries(test_time_offset Eigen3::Eigen)
+
+  ament_add_gtest(test_drift_core test/test_drift_core.cpp)
+  target_include_directories(test_drift_core PRIVATE src)
+  target_link_libraries(test_drift_core Eigen3::Eigen)
 endif()
 
 ament_package()
