@@ -77,6 +77,7 @@ if(BUILD_TESTING)
   # Python scripts (session 23): calibration merge math and URDF check
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_calib_merge test/test_calib_merge.py)
+  ament_add_pytest_test(test_lidar_base_calib test/test_lidar_base_calib.py)
 endif()
 
 ament_package()

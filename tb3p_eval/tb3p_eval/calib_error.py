@@ -29,13 +29,14 @@ def sensor_error(est, truth):
 
     반환하는 dict의 키:
       dxyz  위치 오차 벡터 (m), trans 위치 오차 크기 (m)
-      rot   회전 오차 크기 (rad), drpy 회전 오차의 roll, pitch, yaw 성분 (rad)
+      rot   회전 오차 크기 (rad), drpy 회전 오차의 roll, pitch, yaw 성분 (rad, 추정 - 정답:
+            정답 자세에서 추정 자세로 가는 회전)
       dtime 시간 오프셋 오차 (s)
     """
     dxyz = np.array(est['xyz'], dtype=float) - np.array(truth['xyz'], dtype=float)
     r_est = rpy_to_matrix(*est['rpy'])
     r_true = rpy_to_matrix(*truth['rpy'])
-    r_err = r_est.T @ r_true
+    r_err = r_true.T @ r_est     # 정답 -> 추정 (위치와 같은 방향: 추정 - 정답)
     dtime = float(est.get('time_offset', 0.0)) - float(truth.get('time_offset', 0.0))
     return {
         'dxyz': dxyz,

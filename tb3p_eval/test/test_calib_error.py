@@ -27,7 +27,8 @@ def test_yaw_only_error():
     truth = _sensor((0.0, 0.0, 0.0), (0.0, 0.0, math.radians(2.0)))
     e = sensor_error(est, truth)
     assert math.isclose(math.degrees(e['rot']), 2.0, rel_tol=1e-6)
-    assert math.isclose(math.degrees(e['drpy'][2]), 2.0, rel_tol=1e-6)
+    # 추정 0°, 정답 +2° -> 오차(추정 - 정답) -2° (세션 24: 부호를 위치 오차와 맞춤)
+    assert math.isclose(math.degrees(e['drpy'][2]), -2.0, rel_tol=1e-6)
 
 
 def test_translation_and_time():

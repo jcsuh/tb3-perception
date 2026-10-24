@@ -7,13 +7,14 @@
   --imu        imu_mount_calib.py의 *_imu.yaml            -> sensors.imu (xyz, rpy)
   --lidar-cam  lidar_cam_calib.py의 *_result.yaml         -> sensors.camera (xyz, rpy)
   --time       time_offset_estimate.py의 *_time_offset.yaml -> 각 센서 time_offset, wheels.time_offset
+  --lidar-base lidar_base_calib.py의 *_lidar_base.yaml     -> sensors.lidar (세션 24, 몸 기준 LiDAR)
 
 카메라 자세는 바로 나오지 않는다
   LiDAR-카메라 캘리브레이션이 구한 것은 두 센서 사이 관계(T_color_lidar)뿐이다.
   calibration.yaml에는 base_link 기준 카메라 브래킷 나사(camera_bottom_screw_frame) 자세가 들어가므로
     T_base_screw = T_base_lidar · T_color_lidar⁻¹ · T_screw_color⁻¹
-  T_base_lidar는 calibration.yaml의 LiDAR 값, T_screw_color(나사 -> 컬러 렌즈)는 D435i 설계값으로
-  설계도(xacro)를 직접 돌려 읽는다. 따라서 LiDAR 자세가 틀리면 카메라도 같이 틀린다.
+  T_base_lidar는 --lidar-base 결과(없으면 기준 파일 값), T_screw_color(나사 -> 컬러 렌즈)는 D435i
+  설계값으로 설계도(xacro)를 직접 돌려 읽는다. 따라서 LiDAR 자세가 틀리면 카메라도 같이 틀린다.
 
 설계도 반영 확인 (--check, 기본으로 함)
   새 YAML로 xacro를 돌려 URDF를 만들고, 그 URDF에서 다시 읽은
@@ -98,6 +99,8 @@ def run_xacro(calib_file, xacro_file=None):
         except Exception:      # 빌드 전 소스 폴더에서 바로 쓸 때
             share = SRC_DESC
         xacro_file = os.path.join(share, 'urdf', 'tb3p_burger.urdf.xacro')
+        if not os.path.exists(xacro_file):
+            xacro_file = os.path.join(SRC_DESC, 'urdf', 'tb3p_burger.urdf.xacro')
     cmd = ['xacro', xacro_file, f'calib_file:={os.path.abspath(calib_file)}', 'sim:=true']
     return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
 
@@ -160,11 +163,12 @@ def set_pose(calib, name, t):
     calib['sensors'][name]['rpy'] = [round(v, 7) for v in rpy]
 
 
-def merge(base, wheels=None, imu=None, lidar_cam=None, time=None, t_screw_color=None):
+def merge(base, wheels=None, imu=None, lidar_cam=None, time=None, t_screw_color=None,
+          lidar_base=None):
     """
     기준 calibration dict에 결과들을 덮어쓴 새 dict와 기록(estimated_from)을 돌려준다.
 
-    wheels, imu, lidar_cam, time: 각 결과 파일을 읽은 dict (없으면 None) + 'path' 키
+    wheels, imu, lidar_cam, time, lidar_base: 각 결과 파일을 읽은 dict (없으면 None) + 'path' 키
     t_screw_color: 나사 -> 컬러 렌즈 4x4 (lidar_cam이 있을 때 필요)
     """
     out = copy.deepcopy(base)
@@ -179,6 +183,16 @@ def merge(base, wheels=None, imu=None, lidar_cam=None, time=None, t_screw_color=
         out['sensors']['imu']['xyz'] = [float(v) for v in s['xyz']]
         out['sensors']['imu']['rpy'] = [float(v) for v in s['rpy']]
         log['imu'] = imu['path']
+    if lidar_base is not None:
+        s = lidar_base['sensors']['lidar']
+        out['sensors']['lidar']['xyz'] = [float(v) for v in s['xyz']]
+        out['sensors']['lidar']['rpy'] = [float(v) for v in s['rpy']]
+        log['lidar'] = lidar_base['path']
+        if lidar_cam is None and 'camera' in lidar_base['sensors']:
+            c = lidar_base['sensors']['camera']
+            out['sensors']['camera']['xyz'] = [float(v) for v in c['xyz']]
+            out['sensors']['camera']['rpy'] = [float(v) for v in c['rpy']]
+            log['camera'] = lidar_base['path']
     if time is not None:
         off = time['time_offset_s']
         out['sensors']['imu']['time_offset'] = float(off.get('imu', 0.0))
@@ -194,7 +208,7 @@ def merge(base, wheels=None, imu=None, lidar_cam=None, time=None, t_screw_color=
         set_pose(out, 'camera', t_bs)
         log['camera'] = lidar_cam['path'] + ' (LiDAR-카메라 관계 + LiDAR 자세 + D435i 설계값)'
         log['lidar_beam_elev_deg'] = float(lidar_cam.get('beam_elev_deg', 0.0))
-    log['lidar'] = '기준 파일 값 그대로 (LiDAR -> base_link는 아직 추정하지 않음)'
+    log.setdefault('lidar', '기준 파일 값 그대로 (LiDAR -> base_link를 추정하지 않음)')
     out['estimated_from'] = log
     return out
 
@@ -243,6 +257,7 @@ def main():
     ap.add_argument('--imu', help='imu_mount_calib.py의 *_imu.yaml')
     ap.add_argument('--lidar-cam', help='lidar_cam_calib.py의 *_result.yaml')
     ap.add_argument('--time', help='time_offset_estimate.py의 *_time_offset.yaml')
+    ap.add_argument('--lidar-base', help='lidar_base_calib.py의 *_lidar_base.yaml (몸 기준 LiDAR)')
     ap.add_argument('--xacro', default=None, help='설계도 파일 (기본: 설치된 tb3p_description)')
     ap.add_argument('--no-check', action='store_true', help='설계도 반영 확인을 건너뜀')
     ap.add_argument('--out', default=os.path.expanduser('~/calib_runs/calibration_estimated.yaml'))
@@ -262,7 +277,7 @@ def main():
         urdf_base = run_xacro(args.base, args.xacro)
         t_screw_color = relative(urdf_edges(urdf_base), SCREW, COLOR)
     calib = merge(base, read(args.wheels), read(args.imu), lidar_cam, read(args.time),
-                  t_screw_color)
+                  t_screw_color, read(args.lidar_base))
 
     print('[합친 결과]  기준 파일 대비 변화 (위치 mm, 회전 °)')
     for name in ('imu', 'lidar', 'camera'):

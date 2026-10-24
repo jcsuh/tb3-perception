@@ -128,3 +128,21 @@ def test_check_urdf_zero_for_matching_urdf():
     # 값이 다르면 차이가 보여야 한다
     calib['sensors']['imu']['rpy'] = [0.0, 0.0, 0.01]
     assert cm.check_urdf(urdf, calib)[0][1] == pytest.approx(np.degrees(0.01), abs=1e-6)
+
+
+def test_merge_lidar_base_feeds_camera_chain():
+    rng = np.random.default_rng(5)
+    base = nominal()
+    t_sc = random_pose(rng, 0.03)
+    t_bl_new = random_pose(rng)
+    t_bs_true = random_pose(rng)
+    t_color_lidar = np.linalg.inv(t_bs_true @ t_sc) @ t_bl_new
+    xyz, rpy = cm.from_matrix(t_bl_new)
+    lidar_base = {'path': 'lb.yaml', 'sensors': {'lidar': {'xyz': xyz, 'rpy': rpy}}}
+    out = cm.merge(base, lidar_cam={'path': 'lc.yaml', 'parent': cm.COLOR, 'child': cm.LIDAR,
+                                    'matrix': t_color_lidar.tolist()},
+                   t_screw_color=t_sc, lidar_base=lidar_base)
+    assert out['estimated_from']['lidar'] == 'lb.yaml'
+    assert cm.difference(cm.sensor_matrix(out, 'lidar'), t_bl_new)[0] < 1e-9
+    rot, pos = cm.difference(cm.sensor_matrix(out, 'camera'), t_bs_true)
+    assert rot < 1e-4 and pos < 1e-3        # 새 LiDAR 자세로 카메라를 이어 계산
