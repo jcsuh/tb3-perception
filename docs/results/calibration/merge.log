@@ -1,0 +1,13 @@
+[합친 결과]  기준 파일 대비 변화 (위치 mm, 회전 °)
+    imu     회전  1.333°  위치   5.09 mm   <- imu_mount_imu.yaml
+    lidar   회전  2.032°  위치   7.59 mm   <- lidar_base_result.yaml
+    camera  회전  2.688°  위치   7.41 mm   <- lidar_cam_result.yaml (LiDAR-카메라 관계 + LiDAR 자세 + D435i 설계값)
+    wheels  radius_left 33.00 -> 33.098 mm, radius_right 33.00 -> 32.998 mm, separation 160.00 -> 161.985 mm
+    시간    바퀴 +1.38 ms, LiDAR +1.62 ms (IMU 기준)
+saved /home/jcsuh/calib_runs/20261024_1137/calibration_estimated.yaml
+[설계도 반영 확인]  새 YAML -> xacro -> URDF에서 다시 읽은 값 vs 넣은 값
+    base_link -> imu_link                            회전 0.000000°  위치 0.000000 mm
+    base_link -> base_scan                           회전 0.000000°  위치 0.000000 mm
+    base_link -> camera_bottom_screw_frame           회전 0.000000°  위치 0.000000 mm
+    camera_color_optical_frame <- base_scan          회전 0.000003°  위치 0.000040 mm
+    -> 같음 (설계도에 그대로 반영됨)

@@ -7,6 +7,7 @@ Gazebo에 tb3p 설계도로 로봇을 띄운다.
          umbmark (빈 바닥, 바퀴 캘리브레이션 UMBmark 주행용)
 - enable_infra: true면 D435i IR 카메라 2개를 켠다 (Kalibr용, 시뮬레이션이 느려짐)
 - x_pose, y_pose: 로봇 스폰 위치 (비우면 월드별 기본값)
+- gui: Gazebo 화면 켜기 (기본 true, calibrate_all.py 같은 자동 실행에서는 false로 서버만)
 - calib_file: 로봇이 믿는 캘리브레이션 (기본: 공칭 calibration.yaml).
   calib_merge.py가 만든 추정값을 주면 /tf가 추정값으로 바뀐다. Gazebo 속 로봇(정답)은 그대로
 
@@ -47,10 +48,12 @@ def gazebo_and_spawn(context):
     x = LaunchConfiguration('x_pose').perform(context) or x_default
     y = LaunchConfiguration('y_pose').perform(context) or y_default
     ros_gz_sim = get_package_share_directory('ros_gz_sim')
+    server_only = LaunchConfiguration('gui').perform(context).lower() in ('false', '0')
+    flags = '-r -s' if server_only else '-r'
     return [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-            launch_arguments={'gz_args': f'-r -v2 {world}',
+            launch_arguments={'gz_args': f'{flags} -v2 {world}',
                               'on_exit_shutdown': 'true'}.items(),
         ),
         Node(
@@ -92,6 +95,8 @@ def generate_launch_description():
                               description='스폰 x (비우면 월드 기본값)'),
         DeclareLaunchArgument('y_pose', default_value='',
                               description='스폰 y (비우면 월드 기본값)'),
+        DeclareLaunchArgument('gui', default_value='true',
+                              description='false면 Gazebo 화면 없이 서버만 (자동 실행용)'),
         DeclareLaunchArgument('calib_file', default_value=nominal_calib,
                               description='로봇이 믿는 캘리브레이션 YAML (추정값으로 바꿀 수 있음)'),
 

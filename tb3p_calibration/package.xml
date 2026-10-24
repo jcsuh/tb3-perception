@@ -22,6 +22,7 @@
   <depend>tf2_msgs</depend>
 
   <!-- scripts/: LiDAR-카메라 캘리브레이션 (lidar_cam_*.py) -->
+  <exec_depend>python3-matplotlib</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-scipy</exec_depend>

@@ -1,0 +1,51 @@
+# tb3p 센서 캘리브레이션 (추정값, calib_merge.py가 만듦: 2026-10-24)
+#
+# - 형식은 tb3p_description/config/calibration.yaml과 같다 (단위: m, rad, s)
+# - estimated_from: 각 항목이 어느 결과 파일에서 왔는지
+# - 시뮬레이션에서 로봇이 이 값을 믿게 하려면: ros2 launch tb3p_gazebo sim.launch.py calib_file:=<이 파일>
+
+source: estimated
+sensors:
+  imu:
+    parent: base_link
+    child: imu_link
+    xyz: [-0.02762, 0.00259, 0.068]
+    rpy: [0.008681, -0.012302, 0.017681]
+    time_offset: 0.0
+  lidar:
+    parent: base_link
+    child: base_scan
+    xyz: [-0.0343655, 0.0042648, 0.2248223]
+    rpy: [0.0058679, -0.0021145, 0.0348986]
+    time_offset: 0.00162
+  camera:
+    parent: base_link
+    child: camera_bottom_screw_frame
+    xyz: [0.0534175, -0.0063757, 0.1467624]
+    rpy: [-0.0174269, 0.0360564, -0.0247532]
+    time_offset: 0.0
+wheels:
+  radius_left: 0.0330982
+  radius_right: 0.0329983
+  separation: 0.1619853
+  time_offset: 0.00138
+imu_noise:
+  base_imu:
+    rate: 200
+    gyro_noise_density: 0.0002618
+    accel_noise_density: 0.002256
+    gyro_random_walk: 0.0
+    accel_random_walk: 0.0
+  camera_imu:
+    rate: 200
+    gyro_noise_density: 0.0002443
+    accel_noise_density: 0.001471
+    gyro_random_walk: 0.0
+    accel_random_walk: 0.0
+estimated_from:
+  wheels: /home/jcsuh/calib_runs/20261024_1137/umbmark_wheels_ls.yaml
+  imu: /home/jcsuh/calib_runs/20261024_1137/imu_mount_imu.yaml
+  lidar: /home/jcsuh/calib_runs/20261024_1137/lidar_base_result.yaml
+  time_offset: /home/jcsuh/calib_runs/20261024_1137/time_sync_time_offset.yaml
+  camera: /home/jcsuh/calib_runs/20261024_1137/lidar_cam_result.yaml (LiDAR-카메라 관계 + LiDAR 자세 + D435i 설계값)
+  lidar_beam_elev_deg: -0.444

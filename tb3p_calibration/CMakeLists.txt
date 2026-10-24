@@ -78,6 +78,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_calib_merge test/test_calib_merge.py)
   ament_add_pytest_test(test_lidar_base_calib test/test_lidar_base_calib.py)
+  ament_add_pytest_test(test_estimators test/test_estimators.py)
 endif()
 
 ament_package()

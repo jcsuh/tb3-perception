@@ -1,0 +1,13 @@
+LiDAR 스캔 매칭 650쌍 ...
+    ICP 맞춘 점 (중앙값) 311개, 잔차 11.1 mm
+[IMU 기준 시간 오프셋]  δ = 그 센서 시각에 더해야 할 보정값 (ms)
+    센서      상호상관   구간 맞추기   배율(센서/IMU)
+    wheel        +1.4        +1.38        1.0003  (상관 1.000)
+    lidar        +1.6        +1.62        1.0060  (상관 1.000)
+    교차 확인: LiDAR를 바퀴에 바로 맞추면 +0.25 ms, 두 결과의 차이 +0.24 ms (어긋남 +0.02 ms)
+[(시뮬레이션) Gazebo 정답 회전 기준 오프셋] 지연을 안 넣은 센서도 0이 맞는지
+    imu       -1.38 ms
+    wheel     -0.00 ms
+    lidar     +0.26 ms
+saved /home/jcsuh/calib_runs/20261024_1137/time_sync_time_offset.yaml
+saved /home/jcsuh/calib_runs/20261024_1137/time_sync_sync.png
